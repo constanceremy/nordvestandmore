@@ -7,7 +7,7 @@ export default function Navigation() {
   const pathname = usePathname()
   
   return (
-    <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
+    <nav className="bg-zen-stone-light border-b border-zen-stone-dark sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex space-x-8 items-center">
@@ -15,8 +15,8 @@ export default function Navigation() {
               href="/home"
               className={`inline-flex items-center px-1 pt-1 text-sm font-medium ${
                 pathname === '/home'
-                  ? 'border-b-2 border-blue-500 text-gray-900'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'border-b-2 border-zen-sage text-zen-charcoal'
+                  : 'text-zen-charcoal-light hover:text-zen-charcoal'
               }`}
             >
               Home
@@ -25,8 +25,8 @@ export default function Navigation() {
               href="/transactions"
               className={`inline-flex items-center px-1 pt-1 text-sm font-medium ${
                 pathname.startsWith('/transactions')
-                  ? 'border-b-2 border-blue-500 text-gray-900'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'border-b-2 border-zen-sage text-zen-charcoal'
+                  : 'text-zen-charcoal-light hover:text-zen-charcoal'
               }`}
             >
               Transactions
@@ -35,8 +35,8 @@ export default function Navigation() {
               href="/accounts"
               className={`inline-flex items-center px-1 pt-1 text-sm font-medium ${
                 pathname.startsWith('/accounts')
-                  ? 'border-b-2 border-blue-500 text-gray-900'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'border-b-2 border-zen-sage text-zen-charcoal'
+                  : 'text-zen-charcoal-light hover:text-zen-charcoal'
               }`}
             >
               Accounts
@@ -45,15 +45,15 @@ export default function Navigation() {
               href="/categories"
               className={`inline-flex items-center px-1 pt-1 text-sm font-medium ${
                 pathname.startsWith('/categories')
-                  ? 'border-b-2 border-blue-500 text-gray-900'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'border-b-2 border-zen-sage text-zen-charcoal'
+                  : 'text-zen-charcoal-light hover:text-zen-charcoal'
               }`}
             >
               Categories
             </Link>
             <Link
               href="/transactions/add"
-              className="inline-flex items-center px-1 pt-1 text-sm font-medium text-blue-600 hover:text-blue-800"
+              className="inline-flex items-center px-1 pt-1 text-sm font-medium text-zen-sage-dark hover:text-zen-sage"
             >
               + Add
             </Link>
@@ -62,7 +62,7 @@ export default function Navigation() {
             <form action="/api/auth/signout" method="post">
               <button
                 type="submit"
-                className="text-sm text-gray-500 hover:text-gray-700"
+                className="text-sm text-zen-charcoal-light hover:text-zen-charcoal"
               >
                 Sign Out
               </button>
