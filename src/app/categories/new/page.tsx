@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 
 export default function NewCategoryPage() {
   const router = useRouter()
@@ -32,34 +33,41 @@ export default function NewCategoryPage() {
 
       router.push('/categories')
       router.refresh()
+      
+      toast.success('Category created!', {
+        description: `${name} has been added`
+      })
     } catch (err: any) {
       setError(err.message || 'Failed to create category')
+      toast.error('Failed to create category', {
+        description: err.message
+      })
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-zen-stone">
       <div className="max-w-2xl mx-auto p-6">
         <div className="mb-6">
-          <a href="/categories" className="text-blue-600 hover:text-blue-700">
+          <a href="/categories" className="text-zen-sage-dark hover:text-zen-sage">
             ← Back to Categories
           </a>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-8">
-          <h1 className="text-2xl font-bold mb-6">Create Category</h1>
+        <div className="bg-zen-stone-light rounded-xl shadow-md p-8">
+          <h1 className="text-2xl font-bold mb-6 text-zen-charcoal">Create Category</h1>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="name" className="block text-sm font-medium text-zen-charcoal mb-2">
                 Category Name *
               </label>
               <input
@@ -68,9 +76,9 @@ export default function NewCategoryPage() {
                 name="name"
                 required
                 placeholder="e.g., Groceries, Dining, Travel"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 border border-zen-stone-dark rounded-lg focus:ring-2 focus:ring-zen-sage focus:border-zen-sage"
               />
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-zen-charcoal-light mt-2">
                 Common categories: Groceries, Dining, Transport, Entertainment, Utilities, Rent, Salary
               </p>
             </div>
@@ -79,14 +87,14 @@ export default function NewCategoryPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                className="flex-1 py-3 px-6 bg-zen-sage text-white rounded-lg hover:bg-zen-sage-dark transition-colors shadow-md disabled:opacity-50"
               >
                 {loading ? 'Creating...' : 'Create Category'}
               </button>
               <button
                 type="button"
                 onClick={() => router.push('/categories')}
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                className="px-6 py-3 bg-zen-stone-dark text-zen-charcoal rounded-lg hover:bg-zen-sand transition-colors"
               >
                 Cancel
               </button>

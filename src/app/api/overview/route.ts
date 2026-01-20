@@ -68,17 +68,17 @@ export async function GET(request: Request) {
     const categoryMap: Record<string, { 
       categoryId: string
       categoryName: string
-      target: number
+      budget: number
       planned: number
       paid: number
     }> = {}
 
-    // Initialize all categories with their targets
+    // Initialize all categories with their budgets
     allCategories.forEach(cat => {
       categoryMap[cat.id] = {
         categoryId: cat.id,
         categoryName: cat.name,
-        target: cat.monthlyBudget ? Number(cat.monthlyBudget) : 0,
+        budget: cat.monthlyBudget ? Number(cat.monthlyBudget) : 0,
         planned: 0,
         paid: 0
       }
@@ -90,7 +90,10 @@ export async function GET(request: Request) {
         // Skip lines without categories (transfers)
         if (!line.categoryId || !categoryMap[line.categoryId]) return
 
-        const amount = Math.abs(Number(line.amount))
+        // For expenses, amount is negative in DB, so we negate it to get positive spending
+        // For income, amount is positive in DB, so we negate it to get negative (reduces spending)
+        const amount = -Number(line.amount) // Negative of stored amount
+        
         if (tx.status === 'PLANNED') {
           categoryMap[line.categoryId].planned += amount
         } else {
@@ -105,14 +108,14 @@ export async function GET(request: Request) {
     )
 
     // Calculate totals
-    const totalTarget = categoryBreakdown.reduce((sum, cat) => sum + cat.target, 0)
+    const totalBudget = categoryBreakdown.reduce((sum, cat) => sum + cat.budget, 0)
     const totalPlanned = categoryBreakdown.reduce((sum, cat) => sum + cat.planned, 0)
     const totalPaid = categoryBreakdown.reduce((sum, cat) => sum + cat.paid, 0)
 
     return NextResponse.json({
       categoryBreakdown,
       totals: {
-        totalTarget,
+        totalBudget,
         totalPlanned,
         totalPaid
       }

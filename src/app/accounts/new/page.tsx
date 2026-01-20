@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 
 export default function NewAccountPage() {
   const router = useRouter()
@@ -34,8 +35,15 @@ export default function NewAccountPage() {
 
       router.push('/accounts')
       router.refresh()
+      
+      toast.success('Account created!', {
+        description: `${name} has been added successfully`
+      })
     } catch (err: any) {
       setError(err.message || 'Failed to create account')
+      toast.error('Failed to create account', {
+        description: err.message
+      })
     } finally {
       setLoading(false)
     }

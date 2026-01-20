@@ -1,18 +1,20 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import LoadingSpinner from '@/components/LoadingSpinner'
 
 type BudgetData = {
   categoryBreakdown: Array<{
     categoryId: string
     categoryName: string
-    target: number
+    budget: number
     planned: number
     paid: number
   }>
   totals: {
-    totalTarget: number
+    totalBudget: number
     totalPlanned: number
     totalPaid: number
   }
@@ -26,6 +28,7 @@ type ChartData = {
 }
 
 export default function HomePage() {
+  const router = useRouter()
   const [budgetData, setBudgetData] = useState<BudgetData | null>(null)
   const [chartData, setChartData] = useState<ChartData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -47,9 +50,28 @@ export default function HomePage() {
   const [forecastEndOfMonth, setForecastEndOfMonth] = useState(0)
 
   useEffect(() => {
+    checkOnboardingStatus()
+  }, [])
+
+  useEffect(() => {
     fetchBudgetData()
     fetchChartData()
   }, [selectedMonth, dateField])
+
+  const checkOnboardingStatus = async () => {
+    try {
+      const res = await fetch('/api/onboarding/status')
+      if (res.ok) {
+        const data = await res.json()
+        if (!data.onboardingCompleted) {
+          router.push('/onboarding')
+          return
+        }
+      }
+    } catch (error) {
+      console.error('Error checking onboarding status:', error)
+    }
+  }
 
   const fetchBudgetData = async () => {
     setLoading(true)
@@ -130,7 +152,10 @@ export default function HomePage() {
     return true
   }) ?? []
 
-  const formatCurrency = (amount: number) => amount.toFixed(2)
+  const formatCurrency = (amount: number | undefined | null) => {
+    if (amount === undefined || amount === null) return '0.00'
+    return amount.toFixed(2)
+  }
 
   const formatMonth = (monthStr: string) => {
     const [year, month] = monthStr.split('-')
@@ -146,177 +171,169 @@ export default function HomePage() {
 
   if (loading && !budgetData) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-600">Loading...</p>
+      <div className="min-h-screen bg-zen-stone flex items-center justify-center">
+        <LoadingSpinner size="lg" text="Loading your dashboard..." />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-zen-stone">
       <div className="max-w-7xl mx-auto px-4 py-6">
-        <h1 className="text-3xl font-bold mb-6 text-gray-900">Overview</h1>
+        <h1 className="text-2xl md:text-3xl font-bold mb-4 md:mb-6 text-zen-charcoal">Home</h1>
 
-        {/* Controls */}
-        <div className="bg-white rounded-lg p-6 mb-6 shadow">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Month</label>
+        {/* Controls - Compact */}
+        <div className="bg-zen-stone-light rounded-lg p-3 md:p-4 mb-4 md:mb-6 shadow-md">
+          <div className="flex flex-wrap gap-3 md:gap-4 items-center">
+            {/* Month Picker */}
+            <div className="flex items-center gap-2">
+              <label className="text-xs md:text-sm font-medium text-zen-charcoal whitespace-nowrap">Month:</label>
               <input
                 type="month"
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                className="px-2 md:px-3 py-1 md:py-2 text-sm border border-zen-stone-dark rounded-md focus:ring-2 focus:ring-zen-sage focus:border-zen-sage"
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">View By</label>
-              <div className="flex gap-2">
+            {/* View By Toggle */}
+            <div className="flex items-center gap-2">
+              <label className="text-xs md:text-sm font-medium text-zen-charcoal whitespace-nowrap">View:</label>
+              <div className="flex gap-1 bg-zen-stone-dark rounded-md p-0.5">
                 <button
                   onClick={() => setDateField('effectiveFor')}
-                  className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${
+                  className={`px-2 md:px-3 py-1 rounded text-xs md:text-sm font-medium transition-colors ${
                     dateField === 'effectiveFor'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-zen-sage text-white'
+                      : 'text-zen-charcoal hover:bg-zen-sand-light'
                   }`}
                 >
-                  Effective For
+                  Effective
                 </button>
                 <button
                   onClick={() => setDateField('paidAt')}
-                  className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${
+                  className={`px-2 md:px-3 py-1 rounded text-xs md:text-sm font-medium transition-colors ${
                     dateField === 'paidAt'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-zen-sage text-white'
+                      : 'text-zen-charcoal hover:bg-zen-sand-light'
                   }`}
                 >
-                  Paid At
+                  Paid
                 </button>
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Show</label>
-              <div className="flex gap-4 items-center">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={showPaid}
-                    onChange={(e) => setShowPaid(e.target.checked)}
-                    className="rounded"
-                  />
-                  <span className="text-sm">Paid</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={showPlanned}
-                    onChange={(e) => setShowPlanned(e.target.checked)}
-                    className="rounded"
-                  />
-                  <span className="text-sm">Planned</span>
-                </label>
-              </div>
+            {/* Show Checkboxes */}
+            <div className="flex items-center gap-2 md:gap-3">
+              <span className="text-xs md:text-sm font-medium text-zen-charcoal whitespace-nowrap">Show:</span>
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  checked={showPaid}
+                  onChange={(e) => setShowPaid(e.target.checked)}
+                  className="rounded text-zen-sage focus:ring-zen-sage w-4 h-4"
+                />
+                <span className="text-xs md:text-sm">Paid</span>
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  checked={showPlanned}
+                  onChange={(e) => setShowPlanned(e.target.checked)}
+                  className="rounded text-zen-sage focus:ring-zen-sage w-4 h-4"
+                />
+                <span className="text-xs md:text-sm">Planned</span>
+              </label>
             </div>
           </div>
         </div>
 
         {/* Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg p-6 shadow">
-            <h3 className="text-sm font-medium text-gray-500 uppercase mb-2">Total Spent</h3>
-            <p className="text-3xl font-bold text-gray-900">{formatCurrency(budgetData?.totals?.totalPaid ?? 0)}</p>
-            <p className="text-sm text-gray-500 mt-1">{formatMonth(selectedMonth)}</p>
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
+          {/* Mobile: Row 1, Col 1 | Desktop: Col 1 */}
+          <div className="bg-zen-stone-light rounded-lg p-4 md:p-6 shadow-md">
+            <h3 className="text-xs md:text-sm font-medium text-zen-charcoal-light uppercase mb-1 md:mb-2">Total Spent</h3>
+            <p className="text-xl md:text-3xl font-bold text-zen-charcoal">{formatCurrency(budgetData?.totals?.totalPaid ?? 0)}</p>
+            <p className="text-xs md:text-sm text-zen-charcoal-light mt-1">{formatMonth(selectedMonth)}</p>
           </div>
 
-          <div className="bg-white rounded-lg p-6 shadow">
-            <h3 className="text-sm font-medium text-gray-500 uppercase mb-2">Total Planned</h3>
-            <p className="text-3xl font-bold text-gray-900">{formatCurrency(budgetData?.totals?.totalPlanned ?? 0)}</p>
-            <p className="text-sm text-gray-500 mt-1">{formatMonth(selectedMonth)}</p>
+          {/* Mobile: Row 1, Col 2 (order-1) | Desktop: Col 4 */}
+          <div className="bg-gradient-to-br from-zen-sage-light to-zen-sage rounded-lg p-4 md:p-6 shadow-md order-1 lg:order-4">
+            <h3 className="text-xs md:text-sm font-medium text-white uppercase mb-1 md:mb-2">Remaining</h3>
+            <p className={`text-xl md:text-3xl font-bold ${
+              ((budgetData?.totals?.totalBudget ?? 0) - (budgetData?.totals?.totalPaid ?? 0) - (budgetData?.totals?.totalPlanned ?? 0)) >= 0 
+                ? 'text-white' 
+                : 'text-red-200'
+            }`}>
+              {formatCurrency((budgetData?.totals?.totalBudget ?? 0) - (budgetData?.totals?.totalPaid ?? 0) - (budgetData?.totals?.totalPlanned ?? 0))}
+            </p>
+            <p className="text-xs md:text-sm text-zen-stone-light mt-1">
+              Budget - Spent - Planned
+            </p>
           </div>
 
-          {isCurrentMonth() && (
-            <div className="bg-white rounded-lg p-6 shadow border-2 border-orange-200">
-              <h3 className="text-sm font-medium text-orange-600 uppercase mb-2">As of Today</h3>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Planned</span>
-                  <span className="text-sm font-semibold">{formatCurrency(todayMetrics.plannedUntilToday)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Actual</span>
-                  <span className={`text-sm font-semibold ${
-                    todayMetrics.actualUntilToday > todayMetrics.plannedUntilToday ? 'text-red-600' : 'text-green-600'
-                  }`}>
-                    {formatCurrency(todayMetrics.actualUntilToday)}
-                  </span>
-                </div>
-                <div className="pt-2 border-t border-gray-200 flex justify-between">
-                  <span className="text-sm font-medium">Difference</span>
-                  <span className={`text-lg font-bold ${
-                    todayMetrics.actualUntilToday > todayMetrics.plannedUntilToday ? 'text-red-600' : 'text-green-600'
-                  }`}>
-                    {todayMetrics.actualUntilToday > todayMetrics.plannedUntilToday ? '+' : ''}
-                    {formatCurrency(todayMetrics.actualUntilToday - todayMetrics.plannedUntilToday)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Mobile: Row 2, Col 1 (order-2) | Desktop: Col 2 */}
+          <div className="bg-zen-stone-light rounded-lg p-4 md:p-6 shadow-md order-2">
+            <h3 className="text-xs md:text-sm font-medium text-zen-charcoal-light uppercase mb-1 md:mb-2">Total Planned</h3>
+            <p className="text-xl md:text-3xl font-bold text-zen-charcoal">{formatCurrency(budgetData?.totals?.totalPlanned ?? 0)}</p>
+            <p className="text-xs md:text-sm text-zen-charcoal-light mt-1">{formatMonth(selectedMonth)}</p>
+          </div>
 
-          <div className="bg-purple-100 rounded-lg p-6 shadow">
-            <h3 className="text-sm font-medium text-purple-700 uppercase mb-2">Month-End Forecast</h3>
-            <p className="text-3xl font-bold text-purple-900">{formatCurrency(forecastEndOfMonth)}</p>
-            <p className="text-sm text-purple-700 mt-1">Expected total</p>
+          {/* Mobile: Row 2, Col 2 (order-3) | Desktop: Col 3 */}
+          <div className="bg-zen-stone-light rounded-lg p-4 md:p-6 shadow-md order-3">
+            <h3 className="text-xs md:text-sm font-medium text-zen-charcoal-light uppercase mb-1 md:mb-2">Total Budgeted</h3>
+            <p className="text-xl md:text-3xl font-bold text-zen-charcoal">{formatCurrency(budgetData?.totals?.totalBudget ?? 0)}</p>
+            <p className="text-xs md:text-sm text-zen-charcoal-light mt-1">{formatMonth(selectedMonth)}</p>
           </div>
         </div>
 
         {/* Budget Table */}
-        <div className="bg-white rounded-lg shadow mb-6 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-xl font-bold">Budget Breakdown</h2>
+        <div className="bg-zen-stone-light rounded-lg shadow-md mb-6 overflow-hidden">
+          <div className="px-6 py-4 border-b border-zen-stone-dark">
+            <h2 className="text-xl font-bold text-zen-charcoal">Budget Breakdown</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50">
+              <thead className="bg-zen-stone">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Target</th>
-                  {showPlanned && <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Planned</th>}
-                  {showPaid && <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Paid</th>}
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">vs Target</th>
+                  <th className="sticky left-0 z-10 bg-zen-stone px-6 py-3 text-left text-xs font-medium text-zen-charcoal uppercase">Category</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-zen-charcoal uppercase">Budget</th>
+                  {showPlanned && <th className="px-6 py-3 text-right text-xs font-medium text-zen-charcoal uppercase">Planned</th>}
+                  {showPaid && <th className="px-6 py-3 text-right text-xs font-medium text-zen-charcoal uppercase">Paid</th>}
+                  <th className="px-6 py-3 text-right text-xs font-medium text-zen-charcoal uppercase">Total</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-zen-charcoal uppercase">vs Budget</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-zen-stone-dark">
                 {filteredCategories.map((cat) => {
                   const total = cat.planned + cat.paid
-                  const vsTarget = total - cat.target
+                  const vsBudget = total - cat.budget
                   return (
-                    <tr key={cat.categoryId} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{cat.categoryName}</td>
-                      <td className="px-6 py-4 text-sm text-right text-gray-600">{formatCurrency(cat.target)}</td>
-                      {showPlanned && <td className="px-6 py-4 text-sm text-right text-orange-600 font-medium">{formatCurrency(cat.planned)}</td>}
-                      {showPaid && <td className="px-6 py-4 text-sm text-right text-blue-600 font-medium">{formatCurrency(cat.paid)}</td>}
-                      <td className="px-6 py-4 text-sm text-right font-semibold">{formatCurrency(total)}</td>
-                      <td className={`px-6 py-4 text-sm text-right font-bold ${vsTarget > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {vsTarget > 0 ? '+' : ''}{formatCurrency(vsTarget)}
+                    <tr key={cat.categoryId} className="hover:bg-zen-stone transition-colors">
+                      <td className="sticky left-0 z-10 bg-zen-stone-light px-6 py-4 text-sm font-medium text-zen-charcoal">
+                        {cat.categoryName}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-right text-zen-charcoal-light">{formatCurrency(cat.budget)}</td>
+                      {showPlanned && <td className="px-6 py-4 text-sm text-right text-zen-sand-dark font-medium">{formatCurrency(cat.planned)}</td>}
+                      {showPaid && <td className="px-6 py-4 text-sm text-right text-zen-sage-dark font-medium">{formatCurrency(cat.paid)}</td>}
+                      <td className="px-6 py-4 text-sm text-right font-semibold text-zen-charcoal">{formatCurrency(total)}</td>
+                      <td className={`px-6 py-4 text-sm text-right font-bold ${vsBudget > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {vsBudget > 0 ? '+' : ''}{formatCurrency(vsBudget)}
                       </td>
                     </tr>
                   )
                 })}
-                <tr className="bg-gray-100 font-bold">
-                  <td className="px-6 py-4 text-sm">TOTAL</td>
-                  <td className="px-6 py-4 text-sm text-right">{formatCurrency(budgetData?.totals?.totalTarget ?? 0)}</td>
-                  {showPlanned && <td className="px-6 py-4 text-sm text-right">{formatCurrency(budgetData?.totals?.totalPlanned ?? 0)}</td>}
-                  {showPaid && <td className="px-6 py-4 text-sm text-right">{formatCurrency(budgetData?.totals?.totalPaid ?? 0)}</td>}
-                  <td className="px-6 py-4 text-sm text-right">{formatCurrency((budgetData?.totals?.totalPlanned ?? 0) + (budgetData?.totals?.totalPaid ?? 0))}</td>
+                <tr className="bg-zen-stone-dark font-bold">
+                  <td className="sticky left-0 z-10 bg-zen-stone-dark px-6 py-4 text-sm text-zen-charcoal">TOTAL</td>
+                  <td className="px-6 py-4 text-sm text-right text-zen-charcoal">{formatCurrency(budgetData?.totals?.totalBudget ?? 0)}</td>
+                  {showPlanned && <td className="px-6 py-4 text-sm text-right text-zen-charcoal">{formatCurrency(budgetData?.totals?.totalPlanned ?? 0)}</td>}
+                  {showPaid && <td className="px-6 py-4 text-sm text-right text-zen-charcoal">{formatCurrency(budgetData?.totals?.totalPaid ?? 0)}</td>}
+                  <td className="px-6 py-4 text-sm text-right text-zen-charcoal">{formatCurrency((budgetData?.totals?.totalPlanned ?? 0) + (budgetData?.totals?.totalPaid ?? 0))}</td>
                   <td className={`px-6 py-4 text-sm text-right ${
-                    ((budgetData?.totals?.totalPlanned ?? 0) + (budgetData?.totals?.totalPaid ?? 0) - (budgetData?.totals?.totalTarget ?? 0)) > 0 ? 'text-red-600' : 'text-green-600'
+                    ((budgetData?.totals?.totalPlanned ?? 0) + (budgetData?.totals?.totalPaid ?? 0) - (budgetData?.totals?.totalBudget ?? 0)) > 0 ? 'text-red-600' : 'text-green-600'
                   }`}>
-                    {((budgetData?.totals?.totalPlanned ?? 0) + (budgetData?.totals?.totalPaid ?? 0) - (budgetData?.totals?.totalTarget ?? 0)) > 0 ? '+' : ''}
-                    {formatCurrency((budgetData?.totals?.totalPlanned ?? 0) + (budgetData?.totals?.totalPaid ?? 0) - (budgetData?.totals?.totalTarget ?? 0))}
+                    {((budgetData?.totals?.totalPlanned ?? 0) + (budgetData?.totals?.totalPaid ?? 0) - (budgetData?.totals?.totalBudget ?? 0)) > 0 ? '+' : ''}
+                    {formatCurrency((budgetData?.totals?.totalPlanned ?? 0) + (budgetData?.totals?.totalPaid ?? 0) - (budgetData?.totals?.totalBudget ?? 0))}
                   </td>
                 </tr>
               </tbody>
@@ -326,25 +343,25 @@ export default function HomePage() {
 
         {/* Chart */}
         {chartData && chartData.monthlyTrend && chartData.monthlyTrend.length > 0 && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-bold mb-4">Spending Trend</h2>
-            <p className="text-sm text-gray-500 mb-4">Last 6 Months</p>
+          <div className="bg-zen-stone-light rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-bold mb-4 text-zen-charcoal">Spending Trend</h2>
+            <p className="text-sm text-zen-charcoal-light mb-4">Last 6 Months</p>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={chartData.monthlyTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="month" stroke="#6b7280" style={{ fontSize: '12px' }} />
-                <YAxis stroke="#6b7280" style={{ fontSize: '12px' }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E8E8E3" />
+                <XAxis dataKey="month" stroke="#5A5A5A" style={{ fontSize: '12px' }} />
+                <YAxis stroke="#5A5A5A" style={{ fontSize: '12px' }} />
                 <Tooltip 
                   contentStyle={{ 
-                    backgroundColor: '#ffffff', 
-                    border: '1px solid #e5e7eb',
+                    backgroundColor: '#FEFEFE', 
+                    border: '1px solid #E8E8E3',
                     borderRadius: '0.5rem',
                     boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
                   }}
                 />
                 <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                <Line type="monotone" dataKey="paid" stroke="#2563eb" name="Paid" strokeWidth={2} />
-                <Line type="monotone" dataKey="planned" stroke="#f97316" name="Planned" strokeWidth={2} strokeDasharray="5 5" />
+                <Line type="monotone" dataKey="paid" stroke="#6B8E6B" name="Paid" strokeWidth={2} />
+                <Line type="monotone" dataKey="planned" stroke="#D4C5B0" name="Planned" strokeWidth={2} strokeDasharray="5 5" />
               </LineChart>
             </ResponsiveContainer>
           </div>

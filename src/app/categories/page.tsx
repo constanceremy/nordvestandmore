@@ -1,109 +1,157 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
-import { prisma } from '@/lib/prisma'
+'use client'
 
-async function getProfile(userId: string) {
-  return await prisma.profile.findFirst({
-    where: { userId }
-  })
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+import LoadingSpinner from '@/components/LoadingSpinner'
+
+type Category = {
+  id: string
+  name: string
+  monthlyBudget: number | null
 }
 
-async function updateCategoryBudget(formData: FormData) {
-  'use server'
-  
-  const categoryId = formData.get('categoryId') as string
-  const monthlyBudget = formData.get('monthlyBudget') as string
-  
-  await prisma.category.update({
-    where: { id: categoryId },
-    data: {
-      monthlyBudget: monthlyBudget ? parseFloat(monthlyBudget) : null
+export default function CategoriesPage() {
+  const router = useRouter()
+  const [categories, setCategories] = useState<Category[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchCategories()
+  }, [])
+
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch('/api/categories')
+      if (!res.ok) {
+        if (res.status === 401) {
+          router.push('/login')
+          return
+        }
+        // If it's just an error (like no categories), set empty array
+        setCategories([])
+        setLoading(false)
+        return
+      }
+      const data = await res.json()
+      setCategories(data || [])
+    } catch (error) {
+      // Silent fail - just show empty state
+      setCategories([])
+    } finally {
+      setLoading(false)
     }
-  })
-  
-  redirect('/categories')
-}
-
-export default async function CategoriesPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/login')
   }
 
-  const profile = await getProfile(user.id)
-  if (!profile) {
-    redirect('/login')
+  const handleUpdateBudget = async (categoryId: string, monthlyBudget: string) => {
+    try {
+      const res = await fetch(`/api/categories/${categoryId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          monthlyBudget: monthlyBudget ? parseFloat(monthlyBudget) : null 
+        })
+      })
+
+      if (!res.ok) throw new Error('Failed to update budget')
+
+      toast.success('Budget updated!', {
+        description: 'Category budget has been saved'
+      })
+      
+      fetchCategories()
+    } catch (error) {
+      console.error('Error updating budget:', error)
+      toast.error('Failed to update budget')
+    }
   }
 
-  const categories = await prisma.category.findMany({
-    where: { 
-      profileId: profile.id,
-      archived: false 
-    },
-    orderBy: { name: 'asc' }
-  })
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-zen-stone flex items-center justify-center">
+        <LoadingSpinner size="lg" text="Loading categories..." />
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-4xl mx-auto p-6">
-        <h1 className="text-3xl font-bold mb-6">Categories</h1>
+    <div className="min-h-screen bg-zen-stone">
+      <div className="max-w-6xl mx-auto p-6">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold text-zen-charcoal">Categories</h1>
+          <a
+            href="/categories/new"
+            className="px-4 py-2 bg-zen-sage text-white rounded-lg hover:bg-zen-sage-dark transition-colors shadow-md"
+          >
+            + New Category
+          </a>
+        </div>
 
         {categories.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-8 text-center">
-            <p className="text-gray-600 mb-4">No categories yet. Create some categories for your expenses!</p>
+          <div className="bg-zen-stone-light rounded-xl shadow-md p-12 text-center">
+            <div className="text-6xl mb-4">📁</div>
+            <h3 className="text-xl font-semibold text-zen-charcoal mb-3">No Categories Yet</h3>
+            <p className="text-zen-charcoal/60 mb-6 text-sm max-w-md mx-auto">
+              Create categories to organize your spending and set monthly budget goals.
+            </p>
             <a
               href="/categories/new"
-              className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              className="inline-block px-6 py-3 bg-zen-sage text-white rounded-lg hover:bg-zen-sage-dark transition-colors shadow-md"
             >
-              Create Category
+              + Create Your First Category
             </a>
           </div>
         ) : (
           <div>
-            <div className="bg-white rounded-lg shadow mb-4">
-              <div className="grid grid-cols-1 divide-y">
-                {categories.map((category) => (
-                  <div key={category.id} className="p-4">
-                    <div className="flex justify-between items-center">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-lg">{category.name}</h3>
-                        {category.monthlyBudget && (
-                          <p className="text-sm text-gray-600">
-                            Monthly Budget: {Number(category.monthlyBudget).toFixed(2)} DKK
-                          </p>
-                        )}
-                      </div>
-                      <form action={updateCategoryBudget} className="flex gap-2 items-center">
-                        <input type="hidden" name="categoryId" value={category.id} />
-                        <input
-                          type="number"
-                          name="monthlyBudget"
-                          step="0.01"
-                          placeholder="Monthly budget"
-                          defaultValue={category.monthlyBudget ? Number(category.monthlyBudget).toString() : ''}
-                          className="w-32 px-3 py-1 border border-gray-300 rounded-md text-sm"
-                        />
-                        <button
-                          type="submit"
-                          className="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
-                        >
-                          Set
-                        </button>
-                      </form>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+              {categories.map((category) => (
+                <div
+                  key={category.id}
+                  className="bg-gradient-to-br from-zen-stone-light to-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-zen-stone-dark"
+                >
+                  <h3 className="font-bold text-xl text-zen-charcoal mb-4">{category.name}</h3>
+                  
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      const formData = new FormData(e.currentTarget)
+                      const budget = formData.get('monthlyBudget') as string
+                      handleUpdateBudget(category.id, budget)
+                    }}
+                    className="space-y-3"
+                  >
+                    <div>
+                      <label className="block text-sm text-zen-charcoal-light mb-2">
+                        Monthly Budget Target
+                      </label>
+                      <input
+                        type="number"
+                        name="monthlyBudget"
+                        step="0.01"
+                        placeholder="0.00"
+                        defaultValue={category.monthlyBudget ? Number(category.monthlyBudget).toString() : ''}
+                        className="w-full px-4 py-2 border border-zen-stone-dark rounded-lg focus:ring-2 focus:ring-zen-sage focus:border-zen-sage"
+                      />
                     </div>
-                  </div>
-                ))}
-              </div>
+                    
+                    {category.monthlyBudget && (
+                      <div className="bg-zen-sage-light rounded-lg p-3">
+                        <p className="text-sm text-zen-charcoal">
+                          Current: <span className="font-semibold">{Number(category.monthlyBudget).toFixed(2)} DKK</span>
+                        </p>
+                      </div>
+                    )}
+                    
+                    <button
+                      type="submit"
+                      className="w-full px-4 py-2 bg-zen-sage text-white rounded-lg hover:bg-zen-sage-dark transition-colors shadow-md"
+                    >
+                      Update Budget
+                    </button>
+                  </form>
+                </div>
+              ))}
             </div>
-
-            <a
-              href="/categories/new"
-              className="block w-full py-3 text-center border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-gray-400 hover:text-gray-700"
-            >
-              + Add Category
-            </a>
           </div>
         )}
       </div>

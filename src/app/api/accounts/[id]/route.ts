@@ -98,3 +98,51 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to fetch account details' }, { status: 500 })
   }
 }
+
+export async function PUT(
+  request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { id } = await context.params
+    const body = await request.json()
+    const { name, currency } = body
+
+    const profile = await prisma.profile.findFirst({
+      where: { userId: user.id }
+    })
+
+    if (!profile) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    // Verify account belongs to user
+    const account = await prisma.account.findUnique({
+      where: { id }
+    })
+
+    if (!account || account.profileId !== profile.id) {
+      return NextResponse.json({ error: 'Account not found' }, { status: 404 })
+    }
+
+    // Update account
+    const updatedAccount = await prisma.account.update({
+      where: { id },
+      data: {
+        name,
+        currency,
+      }
+    })
+
+    return NextResponse.json(updatedAccount)
+  } catch (error) {
+    console.error('Error updating account:', error)
+    return NextResponse.json({ error: 'Failed to update account' }, { status: 500 })
+  }
+}

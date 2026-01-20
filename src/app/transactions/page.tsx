@@ -1,13 +1,16 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
+import { toast } from 'sonner'
+import LoadingSpinner from '@/components/LoadingSpinner'
 
 type Transaction = {
   id: string
   kind: string
   status: string
   paidAt: string
+  effectiveForMonth: string | null
   description: string
   notes: string | null
   recurrenceRule?: {
@@ -47,6 +50,19 @@ export default function TransactionsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null)
+
+  // Expandable split transactions
+  const [expandedTxIds, setExpandedTxIds] = useState<Set<string>>(new Set())
+
+  const toggleExpanded = (txId: string) => {
+    const newExpanded = new Set(expandedTxIds)
+    if (newExpanded.has(txId)) {
+      newExpanded.delete(txId)
+    } else {
+      newExpanded.add(txId)
+    }
+    setExpandedTxIds(newExpanded)
+  }
 
   const accountId = searchParams.get('account') || ''
   const categoryId = searchParams.get('category') || ''
@@ -183,6 +199,7 @@ export default function TransactionsPage() {
   }
 
   const handleBatchDelete = async () => {
+    const count = selectedIds.size
     setDeleting(true)
     try {
       await Promise.all(
@@ -194,9 +211,15 @@ export default function TransactionsPage() {
       setSelectedIds(new Set())
       setBatchDeleteMode(false)
       fetchData()
+      
+      toast.success('Transactions deleted', {
+        description: `Successfully deleted ${count} transaction${count > 1 ? 's' : ''}`
+      })
     } catch (error) {
       console.error('Failed to delete transactions', error)
-      alert('Failed to delete some transactions')
+      toast.error('Failed to delete transactions', {
+        description: 'Please try again'
+      })
     } finally {
       setDeleting(false)
     }
@@ -204,8 +227,8 @@ export default function TransactionsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-600">Loading transactions...</p>
+      <div className="min-h-screen bg-zen-stone flex items-center justify-center">
+        <LoadingSpinner size="lg" text="Loading transactions..." />
       </div>
     )
   }
@@ -229,7 +252,7 @@ export default function TransactionsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50" suppressHydrationWarning>
       <div className="max-w-7xl mx-auto p-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold">Transactions</h1>
@@ -254,7 +277,7 @@ export default function TransactionsPage() {
             </button>
             <button
               onClick={handleGenerateRecurring}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm flex items-center gap-2"
+              className="px-4 py-2 bg-zen-sage text-white rounded-lg hover:bg-zen-sage-dark transition-colors text-sm flex items-center gap-2 shadow-md"
               title="Generate missing recurring transactions for the next 24 months"
             >
               🔄 Refresh Recurring
@@ -262,52 +285,55 @@ export default function TransactionsPage() {
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label htmlFor="account" className="block text-sm font-medium text-gray-700 mb-1">
-                Account
+        {/* Filters - Compact */}
+        <div className="bg-white rounded-lg shadow p-3 md:p-4 mb-6">
+          <div className="flex flex-wrap gap-3 md:gap-4 items-center">
+            {/* Account Filter */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="account" className="text-xs md:text-sm font-medium text-gray-700 whitespace-nowrap">
+                Account:
               </label>
               <select
                 id="account"
                 value={accountId}
                 onChange={(e) => updateFilter('account', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                className="px-2 md:px-3 py-1 md:py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-zen-sage"
               >
-                <option value="">All accounts</option>
+                <option value="">All</option>
                 {accounts.map(acc => (
                   <option key={acc.id} value={acc.id}>{acc.name}</option>
                 ))}
               </select>
             </div>
 
-            <div>
-              <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
-                Category
+            {/* Category Filter */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="category" className="text-xs md:text-sm font-medium text-gray-700 whitespace-nowrap">
+                Category:
               </label>
               <select
                 id="category"
                 value={categoryId}
                 onChange={(e) => updateFilter('category', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                className="px-2 md:px-3 py-1 md:py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-zen-sage"
               >
-                <option value="">All categories</option>
+                <option value="">All</option>
                 {categories.map(cat => (
                   <option key={cat.id} value={cat.id}>{cat.name}</option>
                 ))}
               </select>
             </div>
 
-            <div>
-              <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-1">
-                Status
+            {/* Status Filter */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="status" className="text-xs md:text-sm font-medium text-gray-700 whitespace-nowrap">
+                Status:
               </label>
               <select
                 id="status"
                 value={status}
                 onChange={(e) => updateFilter('status', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                className="px-2 md:px-3 py-1 md:py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-zen-sage"
               >
                 <option value="">All</option>
                 <option value="PAID">Paid</option>
@@ -315,15 +341,14 @@ export default function TransactionsPage() {
               </select>
             </div>
 
+            {/* Clear Filters Button */}
             {hasFilters && (
-              <div className="flex items-end">
-                <button
-                  onClick={clearFilters}
-                  className="w-full px-4 py-2 text-sm text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50"
-                >
-                  Clear Filters
-                </button>
-              </div>
+              <button
+                onClick={clearFilters}
+                className="px-3 md:px-4 py-1 md:py-2 text-xs md:text-sm text-zen-sage-dark border border-zen-sage rounded-lg hover:bg-zen-sage-light transition-colors"
+              >
+                Clear
+              </button>
             )}
           </div>
         </div>
@@ -331,8 +356,18 @@ export default function TransactionsPage() {
         {/* Transactions List */}
         <div className="bg-white rounded-lg shadow">
           {transactions.length === 0 ? (
-            <div className="p-8 text-center text-gray-600">
-              No transactions found.
+            <div className="p-12 text-center">
+              <div className="text-6xl mb-4">💳</div>
+              <h3 className="text-xl font-semibold text-zen-charcoal mb-3">No Transactions Yet</h3>
+              <p className="text-zen-charcoal/60 mb-6 text-sm max-w-md mx-auto">
+                Start tracking your finances by adding your first transaction.
+              </p>
+              <a
+                href="/transactions/add"
+                className="inline-block px-6 py-3 bg-zen-sage text-white rounded-lg hover:bg-zen-sage-dark transition-colors shadow-md"
+              >
+                + Add Your First Transaction
+              </a>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -364,83 +399,139 @@ export default function TransactionsPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {transactions.map((tx, index) => {
-                    const totalAmount = tx.lines.reduce((sum, line) => sum + Math.abs(Number(line.amount)), 0)
                     const isExpense = tx.kind === 'EXPENSE'
+                    const isTransfer = tx.kind === 'TRANSFER'
+                    // For transfers, show just the amount transferred (not sum of both sides)
+                    const totalAmount = isTransfer 
+                      ? Math.abs(Number(tx.lines[0]?.amount || 0))
+                      : tx.lines.reduce((sum, line) => sum + Math.abs(Number(line.amount)), 0)
+                    // Only show split UI for non-transfers with multiple lines
+                    const isSplit = !isTransfer && tx.lines.length > 1
+                    const isExpanded = expandedTxIds.has(tx.id)
                     const categories = tx.lines.map(l => l.category?.name).filter(Boolean).join(', ')
                     const accounts = [...new Set(tx.lines.map(l => l.account.name))].join(' → ')
 
                     return (
-                      <tr key={tx.id} className={`hover:bg-gray-50 ${selectedIds.has(tx.id) ? 'bg-blue-50' : ''}`}>
-                        {batchDeleteMode && (
-                          <td className="px-4 py-4">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(tx.id)}
-                              onClick={(e) => toggleSelection(tx.id, index, e.shiftKey)}
-                              onChange={() => {}} // Prevent warning, actual logic in onClick
-                              className="w-4 h-4 rounded border-gray-300 cursor-pointer"
-                            />
-                          </td>
-                        )}
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {formatNiceDate(tx.paidAt)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {tx.effectiveForMonth ? formatMonth(tx.effectiveForMonth) : '—'}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">
-                          <div className="flex items-center gap-2">
-                            {tx.recurrenceRule && (
-                              <span className="text-blue-600" title={`Recurring ${tx.recurrenceRule.frequency.toLowerCase()}`}>
-                                🔄
-                              </span>
-                            )}
-                            <span>{tx.description}</span>
-                          </div>
-                          {tx.notes && (
-                            <div className="text-xs text-gray-500">{tx.notes}</div>
+                      <Fragment key={tx.id}>
+                        {/* Main Transaction Row */}
+                        <tr className={`hover:bg-zen-stone transition-colors ${selectedIds.has(tx.id) ? 'bg-zen-sage-light' : ''}`}>
+                          {batchDeleteMode && (
+                            <td className="px-4 py-4">
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(tx.id)}
+                                onClick={(e) => toggleSelection(tx.id, index, e.shiftKey)}
+                                onChange={() => {}} // Prevent warning, actual logic in onClick
+                                className="w-4 h-4 rounded border-gray-300 cursor-pointer"
+                              />
+                            </td>
                           )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {accounts}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-600">
-                          {categories || '—'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            tx.status === 'PAID' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {tx.status === 'PAID' ? 'Paid' : 'Planned'}
-                          </span>
-                        </td>
-                        <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-medium ${
-                          isExpense ? 'text-red-600' : tx.kind === 'INCOME' ? 'text-green-600' : 'text-gray-900'
-                        }`}>
-                          {isExpense ? '−' : tx.kind === 'INCOME' ? '+' : ''}{totalAmount.toFixed(2)}
-                        </td>
-                        {!batchDeleteMode && (
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right space-x-2">
-                            {tx.status === 'PLANNED' && (
-                              <button
-                                onClick={() => handleMarkAsPaid(tx.id)}
-                                className="text-green-600 hover:text-green-800 text-xs font-medium"
-                                title="Mark as paid"
-                              >
-                                ✓ Paid
-                              </button>
-                            )}
-                            <button
-                              onClick={() => router.push(`/transactions/${tx.id}/edit`)}
-                              className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-                            >
-                              Edit
-                            </button>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {formatNiceDate(tx.paidAt)}
                           </td>
-                        )}
-                      </tr>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {tx.effectiveForMonth ? formatMonth(tx.effectiveForMonth) : '—'}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-900">
+                            <div className="flex items-center gap-2">
+                              {tx.recurrenceRule && (
+                                <span className="text-zen-sage-dark" title={`Recurring ${tx.recurrenceRule.frequency.toLowerCase()}`}>
+                                  🔄
+                                </span>
+                              )}
+                              {isSplit && (
+                                <button
+                                  onClick={() => toggleExpanded(tx.id)}
+                                  className="text-zen-charcoal-light hover:text-zen-charcoal transition-colors"
+                                  title={isExpanded ? "Collapse split" : "Expand split"}
+                                >
+                                  {isExpanded ? '▼' : '▶'}
+                                </button>
+                              )}
+                              <span>{tx.description}</span>
+                              {isSplit && (
+                                <span className="text-xs text-zen-charcoal-light">
+                                  [Split: {tx.lines.length}]
+                                </span>
+                              )}
+                            </div>
+                            {tx.notes && (
+                              <div className="text-xs text-gray-500">{tx.notes}</div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {accounts}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            {isTransfer ? (
+                              <span className="text-zen-charcoal-light">—</span>
+                            ) : isExpanded ? '—' : isSplit ? (
+                              <span className="text-zen-charcoal-light italic">Multi category</span>
+                            ) : (categories || '—')}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              tx.status === 'PAID' 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {tx.status === 'PAID' ? 'Paid' : 'Planned'}
+                            </span>
+                          </td>
+                          <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-medium ${
+                            isExpense ? 'text-red-600' : tx.kind === 'INCOME' ? 'text-green-600' : 'text-gray-900'
+                          }`}>
+                            {isExpense ? '−' : tx.kind === 'INCOME' ? '+' : ''}{totalAmount.toFixed(2)}
+                          </td>
+                          {!batchDeleteMode && (
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right space-x-2">
+                              {tx.status === 'PLANNED' && (
+                                <button
+                                  onClick={() => handleMarkAsPaid(tx.id)}
+                                  className="text-green-600 hover:text-green-800 text-xs font-medium"
+                                  title="Mark as paid"
+                                >
+                                  ✓ Paid
+                                </button>
+                              )}
+                              <button
+                                onClick={() => router.push(`/transactions/${tx.id}/edit`)}
+                                className="text-zen-sage-dark hover:text-zen-sage text-xs font-medium"
+                              >
+                                Edit
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+
+                        {/* Expanded Split Lines */}
+                        {isSplit && isExpanded && tx.lines.map((line, lineIndex) => (
+                          <tr key={`${tx.id}-line-${lineIndex}`} className="bg-zen-stone">
+                            {batchDeleteMode && <td></td>}
+                            <td></td>
+                            <td></td>
+                            <td className="px-6 py-2 text-sm text-gray-600">
+                              <div className="flex items-center gap-2 pl-8">
+                                <span className="text-zen-charcoal-light">└─</span>
+                                <span className="text-xs">{line.account.name}</span>
+                              </div>
+                            </td>
+                            <td></td>
+                            <td className="px-6 py-2 text-sm text-gray-600">
+                              <span className="text-xs">{line.category?.name || '—'}</span>
+                            </td>
+                            <td></td>
+                            <td className={`px-6 py-2 text-sm text-right ${
+                              isExpense ? 'text-red-600' : 'text-green-600'
+                            }`}>
+                              <span className="text-xs">
+                                {Math.abs(Number(line.amount)).toFixed(2)}
+                              </span>
+                            </td>
+                            {!batchDeleteMode && <td></td>}
+                          </tr>
+                        ))}
+                      </Fragment>
                     )
                   })}
                 </tbody>

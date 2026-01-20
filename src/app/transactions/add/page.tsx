@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 
 type Account = {
   id: string
@@ -58,6 +59,9 @@ export default function AddTransactionPage() {
   const [showCategoryForm, setShowCategoryForm] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [creatingCategory, setCreatingCategory] = useState(false)
+
+  // Notes toggle
+  const [showNotes, setShowNotes] = useState(false)
 
   // Recurring confirmation modal
   const [showRecurringPreview, setShowRecurringPreview] = useState(false)
@@ -318,83 +322,94 @@ export default function AddTransactionPage() {
 
       router.push('/accounts')
       router.refresh()
+      
+      // Show success toast
+      if (isRecurring) {
+        toast.success(`Recurring ${kind.toLowerCase()} created!`, {
+          description: `${recurringPreview.length} transactions scheduled`
+        })
+      } else {
+        toast.success(`${kind === 'TRANSFER' ? 'Transfer' : kind.charAt(0) + kind.slice(1).toLowerCase()} added!`, {
+          description: description || 'Transaction saved successfully'
+        })
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to create transaction')
+      toast.error('Failed to create transaction', {
+        description: err.message
+      })
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-3xl mx-auto p-6">
-        <div className="mb-6">
-          <a href="/accounts" className="text-blue-600 hover:text-blue-700">
-            ← Back to Accounts
+    <div className="min-h-screen bg-zen-stone">
+      <div className="max-w-2xl mx-auto p-4 md:p-6">
+        <div className="mb-4">
+          <a href="/transactions" className="text-zen-sage-dark hover:text-zen-sage text-sm">
+            ← Back
           </a>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-8">
-          <h1 className="text-2xl font-bold mb-6">Add Transaction</h1>
+        <div className="bg-zen-stone-light rounded-xl shadow-md p-4 md:p-6">
+          <h1 className="text-xl font-bold mb-4 text-zen-charcoal">Add Transaction</h1>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 text-sm rounded-lg mb-4 text-sm">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Transaction Type */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Type *
-              </label>
-              <div className="flex gap-4">
-                {(['EXPENSE', 'INCOME', 'TRANSFER'] as const).map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setKind(type)}
-                    className={`flex-1 py-2 px-4 rounded-md border-2 ${
-                      kind === type
-                        ? 'border-blue-600 bg-blue-50 text-blue-700'
-                        : 'border-gray-300 hover:border-gray-400'
-                    }`}
-                  >
-                    {type.charAt(0) + type.slice(1).toLowerCase()}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Status */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Status *
-              </label>
-              <div className="flex gap-4">
-                {(['PAID', 'PLANNED'] as const).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setStatus(s)}
-                    className={`flex-1 py-2 px-4 rounded-md border-2 ${
-                      status === s
-                        ? 'border-blue-600 bg-blue-50 text-blue-700'
-                        : 'border-gray-300 hover:border-gray-400'
-                    }`}
-                  >
-                    {s.charAt(0) + s.slice(1).toLowerCase()}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Dates */}
-            <div className="grid grid-cols-2 gap-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Transaction Type & Status - Side by side */}
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="paidAt" className="block text-sm font-medium text-gray-700 mb-1">
-                  Paid At (Date) *
+                <label className="block text-xs font-medium text-zen-charcoal mb-1.5">Type</label>
+                <div className="flex gap-1">
+                  {(['EXPENSE', 'INCOME', 'TRANSFER'] as const).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setKind(type)}
+                      className={`flex-1 py-2 px-2 text-xs rounded-lg border transition-colors ${
+                        kind === type
+                          ? 'border-zen-sage bg-zen-sage text-white'
+                          : 'border-zen-stone-dark hover:border-zen-sand bg-white'
+                      }`}
+                    >
+                      {type.charAt(0) + type.slice(1).toLowerCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zen-charcoal mb-1.5">Status</label>
+                <div className="flex gap-1">
+                  {(['PAID', 'PLANNED'] as const).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setStatus(s)}
+                      className={`flex-1 py-2 px-2 text-xs rounded-lg border transition-colors ${
+                        status === s
+                          ? 'border-zen-sage bg-zen-sage text-white'
+                          : 'border-zen-stone-dark hover:border-zen-sand bg-white'
+                      }`}
+                    >
+                      {s.charAt(0) + s.slice(1).toLowerCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Dates - Side by side */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="paidAt" className="block text-xs font-medium text-zen-charcoal mb-1.5">
+                  Paid At
                 </label>
                 <input
                   type="date"
@@ -402,14 +417,13 @@ export default function AddTransactionPage() {
                   value={paidAt}
                   onChange={(e) => setPaidAt(e.target.value)}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 text-sm text-sm border border-zen-stone-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-zen-sage"
                 />
-                <p className="text-xs text-gray-500 mt-1">When it happens/happened</p>
               </div>
 
               <div>
-                <label htmlFor="effectiveFor" className="block text-sm font-medium text-gray-700 mb-1">
-                  Effective For (Month) *
+                <label htmlFor="effectiveFor" className="block text-xs font-medium text-zen-charcoal mb-1.5">
+                  Effective For
                 </label>
                 <input
                   type="month"
@@ -417,113 +431,34 @@ export default function AddTransactionPage() {
                   value={effectiveFor}
                   onChange={(e) => setEffectiveFor(e.target.value)}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-zen-sage"
                 />
-                <p className="text-xs text-gray-500 mt-1">Which budget month</p>
+                <p className="text-xs text-zen-charcoal-light mt-1">Which budget month</p>
               </div>
             </div>
 
             {/* Description / Store / Source */}
-            <div>
-              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-                {kind === 'EXPENSE' && 'Store / Merchant'}
-                {kind === 'INCOME' && 'Source'}
-                {kind === 'TRANSFER' && 'Description'}
-              </label>
-              <input
-                type="text"
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder={
-                  kind === 'EXPENSE' ? 'e.g., Netto, Føtex, Meny' :
-                  kind === 'INCOME' ? 'e.g., Salary, Freelance, Gift' :
-                  'e.g., Moving to savings'
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            {/* Transfer Fields */}
-            {kind === 'TRANSFER' && (
-              <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
-                <div>
-                  <label htmlFor="fromAccount" className="block text-sm font-medium text-gray-700 mb-1">
-                    From Account *
-                  </label>
-                  <select
-                    id="fromAccount"
-                    value={fromAccountId}
-                    onChange={(e) => setFromAccountId(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select account</option>
-                    {accounts.map(acc => (
-                      <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="toAccount" className="block text-sm font-medium text-gray-700 mb-1">
-                    To Account *
-                  </label>
-                  <select
-                    id="toAccount"
-                    value={toAccountId}
-                    onChange={(e) => setToAccountId(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select account</option>
-                    {accounts.map(acc => (
-                      <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="transferAmount" className="block text-sm font-medium text-gray-700 mb-1">
-                    Amount *
+            {kind !== 'TRANSFER' && (
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label htmlFor="description" className="block text-xs font-medium text-zen-charcoal mb-1.5">
+                    {kind === 'EXPENSE' && 'Store / Merchant'}
+                    {kind === 'INCOME' && 'Source'}
                   </label>
                   <input
-                    type="number"
-                    id="transferAmount"
-                    value={transferAmount}
-                    onChange={(e) => setTransferAmount(e.target.value)}
-                    step="0.01"
-                    required
-                    placeholder="0.00"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    type="text"
+                    id="description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder={
+                      kind === 'EXPENSE' ? 'e.g., Netto, Føtex' :
+                      'e.g., Salary, Freelance'
+                    }
+                    className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-zen-sage"
                   />
                 </div>
-              </div>
-            )}
-
-            {/* Expense/Income Fields */}
-            {kind !== 'TRANSFER' && (
-              <div className="space-y-4">
                 <div>
-                  <label htmlFor="account" className="block text-sm font-medium text-gray-700 mb-1">
-                    Account *
-                  </label>
-                  <select
-                    id="account"
-                    value={accountId}
-                    onChange={(e) => setAccountId(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select account</option>
-                    {accounts.map(acc => (
-                      <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="amount" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="amount" className="block text-xs font-medium text-zen-charcoal mb-1.5">
                     Amount *
                   </label>
                   <input
@@ -534,8 +469,104 @@ export default function AddTransactionPage() {
                     step="0.01"
                     required
                     placeholder="0.00"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-zen-sage"
                   />
+                </div>
+              </div>
+            )}
+
+            {kind === 'TRANSFER' && (
+              <div>
+                <label htmlFor="description" className="block text-xs font-medium text-zen-charcoal mb-1.5">
+                  Description
+                </label>
+                <input
+                  type="text"
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g., Moving to savings"
+                  className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-zen-sage"
+                />
+              </div>
+            )}
+
+            {/* Transfer Fields */}
+            {kind === 'TRANSFER' && (
+              <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+                <div>
+                  <label htmlFor="fromAccount" className="block text-xs font-medium text-zen-charcoal mb-1.5">
+                    From Account *
+                  </label>
+                  <select
+                    id="fromAccount"
+                    value={fromAccountId}
+                    onChange={(e) => setFromAccountId(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-zen-sage"
+                  >
+                    <option value="">Select account</option>
+                    {accounts.map(acc => (
+                      <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="toAccount" className="block text-xs font-medium text-zen-charcoal mb-1.5">
+                    To Account *
+                  </label>
+                  <select
+                    id="toAccount"
+                    value={toAccountId}
+                    onChange={(e) => setToAccountId(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-zen-sage"
+                  >
+                    <option value="">Select account</option>
+                    {accounts.map(acc => (
+                      <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="transferAmount" className="block text-xs font-medium text-zen-charcoal mb-1.5">
+                    Amount *
+                  </label>
+                  <input
+                    type="number"
+                    id="transferAmount"
+                    value={transferAmount}
+                    onChange={(e) => setTransferAmount(e.target.value)}
+                    step="0.01"
+                    required
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-zen-sage"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Expense/Income Fields */}
+            {kind !== 'TRANSFER' && (
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="account" className="block text-xs font-medium text-zen-charcoal mb-1.5">
+                    Account *
+                  </label>
+                  <select
+                    id="account"
+                    value={accountId}
+                    onChange={(e) => setAccountId(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-zen-sage"
+                  >
+                    <option value="">Select account</option>
+                    {accounts.map(acc => (
+                      <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Split Toggle */}
@@ -545,19 +576,19 @@ export default function AddTransactionPage() {
                     id="split"
                     checked={isSplit}
                     onChange={(e) => setIsSplit(e.target.checked)}
-                    className="rounded"
+                    className="rounded text-zen-sage focus:ring-zen-sage"
                   />
-                  <label htmlFor="split" className="text-sm font-medium text-gray-700">
-                    Split across multiple categories
+                  <label htmlFor="split" className="text-xs text-zen-charcoal">
+                    Split across categories
                   </label>
                 </div>
 
                 {/* Category/Split Lines */}
                 {isSplit ? (
-                  <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
+                  <div className="space-y-2 p-3 bg-zen-stone rounded-lg">
                     <div className="flex justify-between items-center">
-                      <p className="text-sm font-medium text-gray-700">Split by category:</p>
-                      <p className={`text-sm font-semibold ${calculateRemaining() === 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      <p className="text-xs font-medium text-zen-charcoal">Split by category</p>
+                      <p className={`text-xs font-semibold ${calculateRemaining() === 0 ? 'text-green-600' : 'text-red-600'}`}>
                         Remaining: {calculateRemaining().toFixed(2)}
                       </p>
                     </div>
@@ -568,9 +599,9 @@ export default function AddTransactionPage() {
                           value={line.categoryId}
                           onChange={(e) => updateLine(index, 'categoryId', e.target.value)}
                           required
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="flex-1 px-2 py-1.5 text-sm border border-zen-stone-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-zen-sage"
                         >
-                          <option value="">Select category</option>
+                          <option value="">Category</option>
                           {categories.map(cat => (
                             <option key={cat.id} value={cat.id}>{cat.name}</option>
                           ))}
@@ -582,13 +613,13 @@ export default function AddTransactionPage() {
                           step="0.01"
                           required
                           placeholder="0.00"
-                          className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-24 px-2 py-1.5 text-sm border border-zen-stone-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-zen-sage"
                         />
                         {lines.length > 1 && (
                           <button
                             type="button"
                             onClick={() => removeLine(index)}
-                            className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-md"
+                            className="px-2 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-lg"
                           >
                             ✕
                           </button>
@@ -599,24 +630,24 @@ export default function AddTransactionPage() {
                     <button
                       type="button"
                       onClick={addLine}
-                      className="text-sm text-blue-600 hover:text-blue-700"
+                      className="text-xs text-zen-sage-dark hover:text-zen-sage"
                     >
                       + Add line
                     </button>
                   </div>
                 ) : (
                   <div>
-                    <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="category" className="block text-xs font-medium text-zen-charcoal mb-1.5">
                       Category *
                     </label>
                     {showCategoryForm ? (
-                      <div className="space-y-2 p-3 bg-gray-50 rounded-lg border border-gray-300">
+                      <div className="space-y-2 p-3 bg-gray-50 rounded-lg border border-zen-stone-dark">
                         <input
                           type="text"
                           value={newCategoryName}
                           onChange={(e) => setNewCategoryName(e.target.value)}
                           placeholder="New category name"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                          className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault()
@@ -629,7 +660,7 @@ export default function AddTransactionPage() {
                             type="button"
                             onClick={handleCreateCategory}
                             disabled={creatingCategory || !newCategoryName.trim()}
-                            className="flex-1 px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 text-sm"
+                            className="flex-1 px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm"
                           >
                             {creatingCategory ? 'Creating...' : 'Create'}
                           </button>
@@ -639,7 +670,7 @@ export default function AddTransactionPage() {
                               setShowCategoryForm(false)
                               setNewCategoryName('')
                             }}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm"
+                            className="flex-1 px-3 py-2 text-sm bg-zen-stone-dark text-zen-charcoal rounded-lg hover:bg-zen-sand text-sm"
                           >
                             Cancel
                           </button>
@@ -652,7 +683,7 @@ export default function AddTransactionPage() {
                           value={lines[0].categoryId}
                           onChange={(e) => updateLine(0, 'categoryId', e.target.value)}
                           required
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="flex-1 px-3 py-2 text-sm border border-zen-stone-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-zen-sage"
                         >
                           <option value="">Select category</option>
                           {categories.map(cat => (
@@ -662,7 +693,7 @@ export default function AddTransactionPage() {
                         <button
                           type="button"
                           onClick={() => setShowCategoryForm(true)}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm whitespace-nowrap"
+                          className="px-4 py-2 bg-zen-sage text-white rounded-lg hover:bg-zen-sage-dark text-sm whitespace-nowrap"
                         >
                           + New
                         </button>
@@ -673,62 +704,94 @@ export default function AddTransactionPage() {
               </div>
             )}
 
-            {/* Notes */}
-            <div>
-              <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">
-                Notes (optional)
-              </label>
-              <textarea
-                id="notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
-                placeholder="Additional notes..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+            {/* Notes - Collapsible */}
+            {!showNotes ? (
+              <button
+                type="button"
+                onClick={() => setShowNotes(true)}
+                className="text-xs text-zen-sage-dark hover:text-zen-sage flex items-center gap-1"
+              >
+                + Add note
+              </button>
+            ) : (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="notes" className="block text-xs font-medium text-zen-charcoal">
+                    Notes
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNotes(false)
+                      setNotes('')
+                    }}
+                    className="text-xs text-zen-charcoal-light hover:text-zen-charcoal"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <textarea
+                  id="notes"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Additional notes..."
+                  className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-zen-sage"
+                />
+              </div>
+            )}
 
             {/* Recurring Transaction */}
-            <div className="border-t pt-6">
-              <div className="flex items-center gap-2 mb-4">
-                <input
-                  type="checkbox"
-                  id="recurring"
-                  checked={isRecurring}
-                  onChange={(e) => setIsRecurring(e.target.checked)}
-                  className="rounded"
-                />
-                <label htmlFor="recurring" className="text-sm font-medium text-gray-700">
-                  🔄 Make this a recurring transaction
-                </label>
-              </div>
+            <div className="border-t pt-4">
+              {!isRecurring ? (
+                <button
+                  type="button"
+                  onClick={() => setIsRecurring(true)}
+                  className="text-xs text-zen-sage-dark hover:text-zen-sage flex items-center gap-1"
+                >
+                  🔄 Make this recurring
+                </button>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="text-xs font-medium text-zen-charcoal">
+                      🔄 Recurring Transaction
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsRecurring(false)}
+                      className="text-xs text-zen-charcoal-light hover:text-zen-charcoal"
+                    >
+                      ✕
+                    </button>
+                  </div>
 
               {isRecurring && (
-                <div className="space-y-4 pl-6 border-l-2 border-blue-200">
+                <div className="space-y-3">
                   {/* Pattern Type */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Recurrence Pattern *
+                    <label className="block text-xs font-medium text-zen-charcoal mb-1.5">
+                      Pattern
                     </label>
-                    <div className="flex gap-4">
+                    <div className="flex gap-2">
                       <button
                         type="button"
                         onClick={() => setRecurrencePattern('simple')}
-                        className={`flex-1 py-2 px-4 rounded-md border ${
+                        className={`flex-1 py-1.5 px-3 text-xs rounded-lg border transition-colors ${
                           recurrencePattern === 'simple'
-                            ? 'border-blue-600 bg-blue-50 text-blue-700'
-                            : 'border-gray-300 hover:border-gray-400'
+                            ? 'border-zen-sage bg-zen-sage text-white'
+                            : 'border-zen-stone-dark hover:border-zen-sand bg-white'
                         }`}
                       >
-                        Simple Interval
+                        Simple
                       </button>
                       <button
                         type="button"
                         onClick={() => setRecurrencePattern('nth-weekday')}
-                        className={`flex-1 py-2 px-4 rounded-md border ${
+                        className={`flex-1 py-1.5 px-3 text-xs rounded-lg border transition-colors ${
                           recurrencePattern === 'nth-weekday'
-                            ? 'border-blue-600 bg-blue-50 text-blue-700'
-                            : 'border-gray-300 hover:border-gray-400'
+                            ? 'border-zen-sage bg-zen-sage text-white'
+                            : 'border-zen-stone-dark hover:border-zen-sand bg-white'
                         }`}
                       >
                         Nth Weekday
@@ -741,7 +804,7 @@ export default function AddTransactionPage() {
                       {/* Simple Pattern: Frequency + Interval */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label htmlFor="interval" className="block text-sm font-medium text-gray-700 mb-1">
+                          <label htmlFor="interval" className="block text-xs font-medium text-zen-charcoal mb-1.5">
                             Every *
                           </label>
                           <input
@@ -750,18 +813,18 @@ export default function AddTransactionPage() {
                             value={interval}
                             onChange={(e) => setInterval(Math.max(1, parseInt(e.target.value) || 1))}
                             min="1"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                            className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg"
                           />
                         </div>
                         <div>
-                          <label htmlFor="frequency" className="block text-sm font-medium text-gray-700 mb-1">
+                          <label htmlFor="frequency" className="block text-xs font-medium text-zen-charcoal mb-1.5">
                             Period *
                           </label>
                           <select
                             id="frequency"
                             value={frequency}
                             onChange={(e) => setFrequency(e.target.value as any)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                            className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg"
                           >
                             <option value="DAILY">Day(s)</option>
                             <option value="WEEKLY">Week(s)</option>
@@ -770,7 +833,7 @@ export default function AddTransactionPage() {
                           </select>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-zen-charcoal-light">
                         {interval === 1 ? (
                           <>
                             {frequency === 'DAILY' && 'Every day'}
@@ -793,7 +856,7 @@ export default function AddTransactionPage() {
                       {/* Nth Weekday Pattern */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label htmlFor="weekOfMonth" className="block text-sm font-medium text-gray-700 mb-1">
+                          <label htmlFor="weekOfMonth" className="block text-xs font-medium text-zen-charcoal mb-1.5">
                             Week *
                           </label>
                           <select
@@ -801,7 +864,7 @@ export default function AddTransactionPage() {
                             value={weekOfMonth ?? ''}
                             onChange={(e) => setWeekOfMonth(e.target.value ? parseInt(e.target.value) : null)}
                             required
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                            className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg"
                           >
                             <option value="">Select week</option>
                             <option value="1">First</option>
@@ -812,7 +875,7 @@ export default function AddTransactionPage() {
                           </select>
                         </div>
                         <div>
-                          <label htmlFor="dayOfWeek" className="block text-sm font-medium text-gray-700 mb-1">
+                          <label htmlFor="dayOfWeek" className="block text-xs font-medium text-zen-charcoal mb-1.5">
                             Day *
                           </label>
                           <select
@@ -820,7 +883,7 @@ export default function AddTransactionPage() {
                             value={dayOfWeek ?? ''}
                             onChange={(e) => setDayOfWeek(e.target.value ? parseInt(e.target.value) : null)}
                             required
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                            className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg"
                           >
                             <option value="">Select day</option>
                             <option value="0">Sunday</option>
@@ -833,7 +896,7 @@ export default function AddTransactionPage() {
                           </select>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-zen-charcoal-light">
                         {weekOfMonth && dayOfWeek !== null && (
                           <>
                             {weekOfMonth === -1 ? 'Last' : ['First', 'Second', 'Third', 'Fourth'][weekOfMonth - 1]}{' '}
@@ -846,7 +909,7 @@ export default function AddTransactionPage() {
                   )}
 
                   <div>
-                    <label htmlFor="repeatUntil" className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="repeatUntil" className="block text-xs font-medium text-zen-charcoal mb-1.5">
                       Repeat Until (optional)
                     </label>
                     <input
@@ -855,19 +918,21 @@ export default function AddTransactionPage() {
                       value={repeatUntil}
                       onChange={(e) => setRepeatUntil(e.target.value)}
                       min={paidAt}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      className="w-full px-3 py-2 text-sm border border-zen-stone-dark rounded-lg"
                     />
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-zen-charcoal-light mt-1">
                       Leave blank to repeat indefinitely
                     </p>
                   </div>
 
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <p className="text-sm text-blue-800">
+                  <div className="bg-zen-sage-light border border-zen-sage rounded-lg p-3">
+                    <p className="text-sm text-zen-charcoal">
                       <strong>💡 How it works:</strong> We'll create planned transactions for the next 24 months. 
                       {repeatUntil && ` Stops on ${new Date(repeatUntil).toLocaleDateString('en-GB')}.`}
                     </p>
                   </div>
+                </div>
+              )}
                 </div>
               )}
             </div>
@@ -877,14 +942,14 @@ export default function AddTransactionPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                className="flex-1 py-2 px-4 bg-zen-sage text-white rounded-lg hover:bg-zen-sage-dark focus:outline-none focus:ring-2 focus:ring-zen-sage disabled:opacity-50"
               >
                 {loading ? 'Creating...' : (isRecurring && recurringPreview.length === 0 ? 'Preview Recurring' : 'Create Transaction')}
               </button>
               <button
                 type="button"
                 onClick={() => router.push('/accounts')}
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                className="px-4 py-2 bg-zen-stone-dark text-zen-charcoal rounded-lg hover:bg-zen-sand"
               >
                 Cancel
               </button>
@@ -909,10 +974,10 @@ export default function AddTransactionPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Paid At</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Effective For</th>
-                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-zen-charcoal-light uppercase">#</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-zen-charcoal-light uppercase">Paid At</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-zen-charcoal-light uppercase">Effective For</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-zen-charcoal-light uppercase">Amount</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -920,7 +985,7 @@ export default function AddTransactionPage() {
                       <tr key={index} className={index === 0 ? 'bg-blue-50' : ''}>
                         <td className="px-4 py-2 text-sm text-gray-900">
                           {index + 1}
-                          {index === 0 && <span className="ml-2 text-xs text-blue-600">(First)</span>}
+                          {index === 0 && <span className="ml-2 text-xs text-zen-sage-dark">(First)</span>}
                         </td>
                         <td className="px-4 py-2 text-sm text-gray-900">
                           {new Date(item.paidAt).toLocaleDateString('en-GB')}
@@ -944,7 +1009,7 @@ export default function AddTransactionPage() {
                   setShowRecurringPreview(false)
                   setRecurringPreview([])
                 }}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100"
+                className="flex-1 px-4 py-2 border border-zen-stone-dark rounded-lg text-zen-charcoal hover:bg-gray-100"
               >
                 Cancel
               </button>
@@ -956,7 +1021,7 @@ export default function AddTransactionPage() {
                   if (form) form.requestSubmit()
                 }}
                 disabled={loading}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                className="flex-1 px-4 py-2 bg-zen-sage text-white rounded-lg hover:bg-zen-sage-dark disabled:opacity-50"
               >
                 {loading ? 'Creating...' : `Confirm & Create ${recurringPreview.length} Transactions`}
               </button>

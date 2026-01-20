@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Navigation from "@/components/Navigation";
+import { Toaster } from 'sonner';
 
 export const metadata: Metadata = {
-  title: "Budget App",
-  description: "Personal finance tracker",
+  title: "Balance - Budget App",
+  description: "Your peaceful path to financial clarity",
 };
 
 export default function RootLayout({
@@ -17,6 +18,12 @@ export default function RootLayout({
       <body>
         <Navigation />
         {children}
+        <Toaster 
+          position="top-right" 
+          richColors 
+          closeButton
+          duration={3000}
+        />
       </body>
     </html>
   );

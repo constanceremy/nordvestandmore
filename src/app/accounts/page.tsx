@@ -1,119 +1,163 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
-import { prisma } from '@/lib/prisma'
+'use client'
 
-async function ensureProfile(userId: string, email: string) {
-  // Check if profile exists
-  let profile = await prisma.profile.findFirst({
-    where: { userId }
-  })
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import LoadingSpinner from '@/components/LoadingSpinner'
 
-  // If not, create user and profile
-  if (!profile) {
-    // First ensure user exists
-    let user = await prisma.user.findUnique({
-      where: { id: userId }
-    })
-
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          id: userId,
-          email,
-        }
-      })
-    }
-
-    // Then create profile
-    profile = await prisma.profile.create({
-      data: {
-        userId,
-        primaryCurrency: 'DKK',
-        timezone: 'Europe/Copenhagen',
-      }
-    })
-  }
-
-  return profile
+type Account = {
+  id: string
+  name: string
+  type: string
+  currency: string
+  currentBalance: number
 }
 
-export default async function AccountsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+export default function AccountsPage() {
+  const router = useRouter()
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [loading, setLoading] = useState(true)
 
-  if (!user) {
-    redirect('/login')
+  useEffect(() => {
+    fetchAccounts()
+  }, [])
+
+  const fetchAccounts = async () => {
+    try {
+      const res = await fetch('/api/accounts')
+      if (!res.ok) {
+        if (res.status === 401) {
+          router.push('/login')
+          return
+        }
+        // If it's just an error (like no accounts), set empty array
+        setAccounts([])
+        setLoading(false)
+        return
+      }
+      const data = await res.json()
+      
+      // If no accounts, just set empty array
+      if (!data || data.length === 0) {
+        setAccounts([])
+        setLoading(false)
+        return
+      }
+      
+      // Calculate balances for each account
+      const accountsWithBalances = await Promise.all(
+        data.map(async (account: any) => {
+          const detailRes = await fetch(`/api/accounts/${account.id}`)
+          if (detailRes.ok) {
+            const detail = await detailRes.json()
+            return {
+              ...account,
+              currentBalance: detail.currentBalance || 0
+            }
+          }
+          return { ...account, currentBalance: 0 }
+        })
+      )
+      
+      setAccounts(accountsWithBalances)
+    } catch (error) {
+      // Silent fail - just show empty state
+      setAccounts([])
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // Ensure user has a profile
-  const profile = await ensureProfile(user.id, user.email!)
+  const formatCurrency = (amount: number, currency: string) => {
+    return new Intl.NumberFormat('da-DK', {
+      style: 'currency',
+      currency: currency,
+      minimumFractionDigits: 2
+    }).format(amount)
+  }
 
-  const accounts = await prisma.account.findMany({
-    where: { 
-      profileId: profile.id,
-      archived: false 
-    },
-    include: {
-      lines: {
-        where: {
-          transaction: {
-            status: 'PAID'
-          }
-        }
-      }
-    },
-    orderBy: { createdAt: 'asc' }
-  })
-
-  // Calculate current balances
-  const accountsWithBalances = accounts.map(account => {
-    const transactionTotal = account.lines.reduce((sum, line) => 
-      sum + Number(line.amount), 0
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-zen-stone flex items-center justify-center">
+        <LoadingSpinner size="lg" text="Loading accounts..." />
+      </div>
     )
-    const currentBalance = Number(account.openingBalance) + transactionTotal
-    return {
-      ...account,
-      currentBalance
-    }
-  })
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-4xl mx-auto p-6">
-        <h1 className="text-3xl font-bold mb-6">Accounts</h1>
+    <div className="min-h-screen bg-zen-stone">
+      <div className="max-w-6xl mx-auto p-6">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold text-zen-charcoal">Accounts</h1>
+          <Link
+            href="/accounts/new"
+            className="px-4 py-2 bg-zen-sage text-white rounded-lg hover:bg-zen-sage-dark transition-colors shadow-md"
+          >
+            + New Account
+          </Link>
+        </div>
 
         {accounts.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-8 text-center">
-            <p className="text-gray-600 mb-4">No accounts yet. Create your first account!</p>
-            <a
+          <div className="bg-zen-stone-light rounded-xl shadow-md p-12 text-center">
+            <div className="text-6xl mb-4">🏦</div>
+            <h3 className="text-xl font-semibold text-zen-charcoal mb-3">No Accounts Yet</h3>
+            <p className="text-zen-charcoal/60 mb-6 text-sm max-w-md mx-auto">
+              Create your first account to start tracking your finances. Add bank accounts, credit cards, or cash.
+            </p>
+            <Link
               href="/accounts/new"
-              className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              className="inline-block px-6 py-3 bg-zen-sage text-white rounded-lg hover:bg-zen-sage-dark transition-colors shadow-md"
             >
-              Create Account
-            </a>
+              + Create Your First Account
+            </Link>
           </div>
         ) : (
-          <div className="space-y-4">
-            {accountsWithBalances.map((account) => (
-              <a
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {accounts.map((account) => (
+              <div
                 key={account.id}
-                href={`/accounts/${account.id}`}
-                className="block bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
+                className="bg-zen-stone-light rounded-xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border-l-4 border-zen-sage"
               >
-                <h3 className="text-xl font-semibold">{account.name}</h3>
-                <p className="text-sm text-gray-500">{account.type} • {account.currency}</p>
-                <p className="text-2xl font-bold mt-2">
-                  {account.currentBalance.toFixed(2)} {account.currency}
-                </p>
-              </a>
-            ))}
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-bold text-xl text-zen-charcoal mb-1">
+                      {account.name}
+                    </h3>
+                    <p className="text-sm text-zen-charcoal-light capitalize">
+                      {account.type.toLowerCase().replace('_', ' ')}
+                    </p>
+                  </div>
+                </div>
 
-            <a
-              href="/accounts/new"
-              className="block w-full py-3 text-center border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-gray-400 hover:text-gray-700"
-            >
-              + Add Account
-            </a>
+                <div className="mb-6">
+                  <p className="text-3xl font-bold text-zen-sage-dark">
+                    {formatCurrency(account.currentBalance, account.currency)}
+                  </p>
+                  <p className="text-xs text-zen-charcoal-light mt-1">Current Balance</p>
+                </div>
+
+                <div className="flex gap-2">
+                  <Link
+                    href={`/accounts/${account.id}`}
+                    className="flex-1 px-3 py-2 bg-zen-sage text-white rounded-lg hover:bg-zen-sage-dark transition-colors text-center text-sm"
+                  >
+                    View
+                  </Link>
+                  <Link
+                    href={`/accounts/${account.id}/edit`}
+                    className="flex-1 px-3 py-2 bg-zen-stone-dark text-zen-charcoal rounded-lg hover:bg-zen-sand transition-colors text-center text-sm"
+                  >
+                    Edit
+                  </Link>
+                  <Link
+                    href={`/accounts/${account.id}/reconcile`}
+                    className="flex-1 px-3 py-2 bg-zen-stone-dark text-zen-charcoal rounded-lg hover:bg-zen-sand transition-colors text-center text-sm"
+                  >
+                    Reconcile
+                  </Link>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
