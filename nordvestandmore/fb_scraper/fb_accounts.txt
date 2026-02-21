@@ -1,0 +1,36 @@
+# Facebook pages to scrape for events
+
+
+https://www.facebook.com/profile.php?id=61556180883930&sk=events #gamma
+https://www.facebook.com/profile.php?id=100027792056483&sk=events #De Grønne Pigespejdere - Grøndal Gruppe
+https://www.facebook.com/profile.php?id=100090971047719&sk=events #Områdefornyelse Bispeengen
+https://www.facebook.com/profile.php?id=61575807150439&sk=events #Højbanen
+https://www.facebook.com/profile.php?id=61573846614477&sk=events #A Music Collective
+https://www.facebook.com/profile.php?id=61554029725336&sk=events #ALIVE Tantra Copenhagen 
+https://www.facebook.com/streetsocietyDK/events
+https://www.facebook.com/CafeGazouNV/events
+https://www.facebook.com/Dortheasnordvest/events
+https://www.facebook.com/BispebjergBakke.omf/events
+https://www.facebook.com/justsaunadk/events |exclude:Jernbanegade
+https://www.facebook.com/rortcph/events
+https://www.facebook.com/LygtenStation/events
+https://www.facebook.com/Grundtvigs.Kirke/events
+https://www.facebook.com/bispebjerg/events
+https://www.facebook.com/UtterslevTorvsKulturforening/events
+https://www.facebook.com/BIBLIOTEKETrentemestervej/events
+https://www.facebook.com/GANGgalleri/events
+https://www.facebook.com/Kimiahealingspace/events
+https://www.facebook.com/beboerprojektnv/events
+https://www.facebook.com/goldschmidtsakademi/events
+https://www.facebook.com/fofkbh/events |filter:Birkedommervej
+https://www.facebook.com/MakerSpacenv/events
+https://www.facebook.com/repaircafe.nordvest/events
+https://www.facebook.com/copenhagenmusicacademy/events
+https://www.facebook.com/rabenssaloner/events
+https://www.facebook.com/lagersalgcom/events |filter:2400
+https://www.facebook.com/stormbcafe/events
+https://www.facebook.com/Sokkelundlille/events
+https://www.facebook.com/demokratigarage/events
+https://www.facebook.com/Kobenhavnstrup/events
+https://www.facebook.com/womenssharingcirclecommunity/events
+https://www.facebook.com/nordvestolbar/events
