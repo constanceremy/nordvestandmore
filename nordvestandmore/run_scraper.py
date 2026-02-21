@@ -398,6 +398,71 @@ def main():
             else:
                 print("  ⏭️  Skipping retry — accounts with 0 posts were not re-scraped")
 
+        # ── Recurring events ──
+        print()
+        print("═" * 50)
+        print("  🔁 Generating recurring events...")
+        print("═" * 50)
+        print()
+
+        from recurring_events import generate_recurring_events
+        rec_events = generate_recurring_events(months_ahead=6)
+        rec_created = 0
+        rec_updated = 0
+        rec_skipped = 0
+
+        # Group by source for neat output
+        from collections import defaultdict
+        rec_by_source: dict[str, list] = defaultdict(list)
+        for ev in rec_events:
+            rec_by_source[ev.get("source", "recurring")].append(ev)
+
+        for source_key, evts in rec_by_source.items():
+            first = evts[0]
+            print(f"  🔁 {first['event_name']} ({source_key}): {len(evts)} instance(s)")
+
+            for ev in evts:
+                dedup_key = f"{ev['url']}##{ev['start_date']}##{ev.get('start_time_disp', '')}"
+
+                page_id = fb_existing.get(dedup_key)
+                if not page_id:
+                    # Also try without time
+                    dedup_key_no_time = f"{ev['url']}##{ev['start_date']}##"
+                    page_id = fb_existing.get(dedup_key_no_time)
+
+                if page_id:
+                    resp = web_mod.notion_update(page_id, ev)
+                    if resp.status_code == 429:
+                        time.sleep(1.5)
+                        resp = web_mod.notion_update(page_id, ev)
+                    rec_updated += 1
+                else:
+                    resp = web_mod.notion_create(ev)
+                    if resp.status_code == 429:
+                        time.sleep(1.5)
+                        resp = web_mod.notion_create(ev)
+                    if resp.status_code < 400:
+                        try:
+                            new_id = resp.json().get("id")
+                            if new_id:
+                                fb_existing[dedup_key] = new_id
+                        except Exception:
+                            pass
+                        rec_created += 1
+                    else:
+                        rec_skipped += 1
+
+                time.sleep(0.2)
+
+            print(f"     ✅ {first['event_name']}: {len(evts)} dates")
+
+        totals["created"] += rec_created
+        totals["updated"] += rec_updated
+        totals["total_events"] += len(rec_events)
+
+        print()
+        print(f"  🔁 Recurring: {rec_created} created, {rec_updated} updated, {rec_skipped} errors")
+
     finally:
         if tmp_dir:
             shutil.rmtree(tmp_dir, ignore_errors=True)

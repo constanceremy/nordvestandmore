@@ -1851,6 +1851,1197 @@ def parse_urban13(html: str, page_url: str) -> list[dict]:
     return events
 
 
+# ────────────────── Nordic Health House (NOR:) parser ──────────────────
+
+_NOR_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "da-DK,da;q=0.9,en;q=0.8",
+}
+
+
+def _analyze_nor_page_with_gemini(client, page_text: str, event_url: str) -> list[dict]:
+    """
+    Use Gemini to extract individual session dates/times from a NOR: workshop page.
+    The date formats are highly varied (Danish, English, modules, series, etc.).
+    Returns a list of {event_name, event_date, start_time, end_time, description}.
+    """
+    from google.genai import types
+
+    today_str = date.today().isoformat()
+    prompt = f"""Analyze this event/workshop page from NOR: Nordic Health House (a yoga and wellness center at Hejrevej 30, 2400 København NV).
+
+Extract ALL individual session dates as separate entries in JSON. Rules:
+
+1. WORKSHOP SERIES (multiple listed dates with same time):
+   Create a SEPARATE entry for EACH date. Use the same event name for all.
+
+2. MULTI-DAY WORKSHOPS/MODULES (e.g., "Modul 1: Fredag + Lørdag"):
+   Create a SEPARATE entry for EACH day within each module.
+
+3. "Ekstra workshop" sections are additional separate events with the same name.
+
+4. SINGLE workshops: one entry.
+
+5. Only include sessions from {today_str} onward. Skip past dates.
+
+6. If a date doesn't include a year, assume 2026.
+
+7. Parse BOTH Danish dates ("Søndag den 1. marts", "Onsdag d. 15. april") 
+   AND English dates ("Friday the 20th of February").
+
+Respond ONLY with valid JSON:
+{{
+  "events": [
+    {{
+      "event_name": "Name of the workshop",
+      "event_date": "YYYY-MM-DD",
+      "start_time": "HH:MM (24h)" or null,
+      "end_time": "HH:MM (24h)" or null,
+      "description": "One-line summary or price info"
+    }}
+  ]
+}}
+
+If NO upcoming events are found, return {{"events": []}}.
+Respond ONLY with the JSON, no extra text.
+
+Page URL: {event_url}
+Page content:
+{page_text[:6000]}"""
+
+    try:
+        _gemini_limiter.wait()
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[prompt],
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                max_output_tokens=4000,
+            ),
+        )
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        result = json.loads(text)
+        return result.get("events", [])
+    except Exception as e:
+        log(f"    Gemini analysis failed: {e}")
+        return []
+
+
+def parse_norhouse(html: str, page_url: str) -> list[dict]:
+    """
+    Parser for https://nor.house/events/
+
+    Main page lists events in portfolio cards with CSS classes indicating category
+    (workshops, retreats, uddannelse). We only scrape 'workshops'.
+    Each card links to a detail page with date/time info in varied formats.
+    We use Gemini to reliably extract session dates from each detail page.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    events = []
+    today = date.today()
+
+    # ── Collect workshop URLs from the main page ──
+    workshop_urls: list[tuple[str, str]] = []  # (title, url)
+    seen_hrefs: set[str] = set()
+
+    for card in soup.find_all("div", class_="elastic-portfolio-item"):
+        classes = " ".join(card.get("class", []))
+
+        # Only include workshops (skip pure retreats)
+        if "workshops" not in classes:
+            continue
+        # Exclude retreats (even if also tagged as workshop)
+        if "retreats" in classes:
+            if DEBUG:
+                h3 = card.find("h3")
+                name = h3.get_text(strip=True) if h3 else "?"
+                log(f"  Skipping retreat: {name}")
+            continue
+
+        a_tag = card.find("a", href=True)
+        if not a_tag:
+            continue
+        href = a_tag["href"]
+        if href in seen_hrefs or href == "https://nor.house/events/":
+            continue
+        seen_hrefs.add(href)
+
+        h3 = card.find("h3")
+        title = h3.get_text(strip=True) if h3 else "Workshop"
+        # Clean up title: remove "(X pladser tilbage)", "(UDSOLGT)" etc.
+        title = re.sub(r"\s*\((?:Få pladser tilbage|UDSOLGT!?|\d+ plads(?:er)? tilbage)\)\s*", "", title).strip()
+
+        workshop_urls.append((title, href))
+
+    if not workshop_urls:
+        log("  No workshop links found on page")
+        return events
+
+    log(f"  Found {len(workshop_urls)} workshop(s) — visiting each detail page...")
+
+    # ── Check Gemini availability ──
+    client = get_gemini_client()
+    if not client:
+        log("  ⚠️ No Gemini API key — cannot analyze workshop pages")
+        return events
+
+    # ── Visit each detail page ──
+    for i, (title, detail_url) in enumerate(workshop_urls, 1):
+        try:
+            if DEBUG:
+                log(f"  [{i}/{len(workshop_urls)}] {title}")
+
+            r = requests.get(detail_url, headers=_NOR_HEADERS, timeout=15)
+            r.raise_for_status()
+            detail_soup = BeautifulSoup(r.text, "html.parser")
+
+            # Extract subtitle from .subheader (e.g. "24-timers fordybelse med Simon Krohn")
+            subheader_el = detail_soup.find(class_="subheader")
+            subtitle = subheader_el.get_text(strip=True) if subheader_el else None
+            # Build a richer title: "Yoga og Kroppen – 24-timers fordybelse med Simon Krohn"
+            full_title = f"{title} – {subtitle}" if subtitle else title
+
+            # Extract content area (skip nav/footer)
+            main = detail_soup.find("main") or detail_soup.find("article")
+            if not main:
+                for div in detail_soup.find_all("div"):
+                    cls = " ".join(div.get("class", []))
+                    if "content" in cls.lower() or "entry" in cls.lower():
+                        main = div
+                        break
+
+            page_text = main.get_text("\n", strip=True) if main else detail_soup.get_text("\n", strip=True)
+
+            if len(page_text.strip()) < 30:
+                if DEBUG:
+                    log(f"    ⚠️ Page has very little content — skipping")
+                continue
+
+            # Use Gemini to extract sessions
+            gemini_events = _analyze_nor_page_with_gemini(client, page_text, detail_url)
+
+            if not gemini_events:
+                if DEBUG:
+                    log(f"    No upcoming sessions found")
+                continue
+
+            session_count = 0
+            for ev_data in gemini_events:
+                event_date_str = ev_data.get("event_date")
+
+                # Skip past events
+                if event_date_str:
+                    try:
+                        if date.fromisoformat(event_date_str) < today:
+                            continue
+                    except ValueError:
+                        continue
+
+                session_count += 1
+                # Prefer our HTML-enriched title (with subtitle) over Gemini's
+                gemini_name = ev_data.get("event_name") or ""
+                # If Gemini returned a name that's just the base title, use full_title
+                if not gemini_name or gemini_name.strip().lower() == title.strip().lower():
+                    ev_name = full_title
+                else:
+                    ev_name = gemini_name
+                events.append({
+                    "event_name": ev_name,
+                    "event_date": event_date_str,
+                    "start_time": ev_data.get("start_time"),
+                    "end_time": ev_data.get("end_time"),
+                    "location": "NOR: Nordic Health House, Hejrevej 30, 2400 København NV",
+                    "organizer": "Nordic Health House",
+                    "description": ev_data.get("description"),
+                    "url": detail_url,
+                })
+
+            if DEBUG and session_count:
+                log(f"    ✅ {session_count} upcoming session(s)")
+
+        except Exception as e:
+            log(f"    ⚠️ Could not process {detail_url}: {e}")
+
+        time.sleep(0.5)
+
+    return events
+
+
+# ────────────────── Københavns Biblioteker (Cludo API) parser ──────────────────
+
+_KK_CLUDO_API = "https://api.cludo.com/api/v3/2719/14520/search"
+_KK_CLUDO_AUTH = "SiteKey MjcxOToxNDUyMDpTZWFyY2hLZXk="
+
+# Events to skip (recurring community-service events, not cultural events)
+_KK_SKIP_TITLES = {
+    "lektiehjælp",
+    "it-café",
+    "it-cafe",
+    "antidote",
+    "fællesspisning",
+}
+
+# Map Cludo location names → physical addresses
+_KK_LOCATION_ADDRESSES: dict[str, str] = {
+    "BIBLIOTEKET Rentemestervej": "Rentemestervej 76, 2400 København NV",
+}
+
+
+def _parse_kk_date(text: str) -> str | None:
+    """Parse Cludo Danish date like '22. februar 2026' → 'YYYY-MM-DD'.
+    Also handles ranges like '7. - 22. februar 2026' (returns first date)."""
+    text = text.strip()
+    # Range format: "7. - 22. februar 2026"
+    m = re.match(r"(\d{1,2})\.\s*-\s*\d{1,2}\.\s*([a-zæøå]+)\s+(\d{4})", text, re.IGNORECASE)
+    if m:
+        day, month_str, year = int(m.group(1)), m.group(2).lower(), int(m.group(3))
+        month = MONTH_MAP.get(month_str)
+        if month:
+            try:
+                return date(year, month, day).isoformat()
+            except ValueError:
+                pass
+        return None
+    return parse_danish_date(text)
+
+
+def _fetch_kk_events(location: str) -> list[dict]:
+    """Fetch all events from Cludo API for a given KK library location."""
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": _KK_CLUDO_AUTH,
+        "Origin": "https://bibliotek.kk.dk",
+        "Referer": "https://bibliotek.kk.dk/arrangementer/soeg",
+    }
+    payload = {
+        "ResponseType": "JsonObject",
+        "query": "*",
+        "page": 1,
+        "perPage": 100,
+        "facets": {
+            "Category": ["Arrangementer"],
+            "Location": [location],
+        },
+        "sort": {"SortDate_date": "asc"},
+        "applyMultiLevelFacets": True,
+    }
+    r = requests.post(_KK_CLUDO_API, json=payload, headers=headers, timeout=20)
+    if r.status_code != 200:
+        log(f"  ❌ Cludo API returned {r.status_code}")
+        return []
+    data = r.json()
+    log(f"  Cludo API: {data.get('TotalDocument', 0)} events for '{location}'")
+    return data.get("TypedDocuments", [])
+
+
+def parse_kk_bibliotek(html: str, page_url: str) -> list[dict]:
+    """
+    Parser for Københavns Biblioteker events.
+    Uses the Cludo search API to get structured event data.
+    The location is extracted from the page_url's cludoLocation parameter.
+    Each recurring date becomes a separate event entry.
+    """
+    import urllib.parse
+
+    events: list[dict] = []
+    today = date.today()
+
+    # Extract location from URL hash parameters
+    location = "BIBLIOTEKET Rentemestervej"  # default
+    if "cludoLocation=" in page_url:
+        # URL-encoded location in the hash fragment
+        m = re.search(r"cludoLocation=([^&]+)", page_url)
+        if m:
+            location = urllib.parse.unquote(m.group(1))
+
+    # Fetch events from Cludo API
+    raw_docs = _fetch_kk_events(location)
+    if not raw_docs:
+        return events
+
+    for doc in raw_docs:
+        fields = doc.get("Fields", {})
+        title = fields.get("Title", {}).get("Value", "").strip()
+        if not title:
+            continue
+
+        # Skip excluded event types
+        title_lower = title.lower()
+        if any(skip in title_lower for skip in _KK_SKIP_TITLES):
+            if DEBUG:
+                log(f"  Skipping (excluded): {title}")
+            continue
+
+        event_url = fields.get("Url", {}).get("Value", "")
+        description_vals = fields.get("Description", {}).get("Values", [])
+        description = " ".join(d.strip() for d in description_vals if d.strip())[:2000] if description_vals else None
+        price = fields.get("EventPrice", {}).get("Value", "")
+        tag = fields.get("Tag", {}).get("Value", "")
+
+        # Add price and tag to description
+        desc_parts = []
+        if description:
+            desc_parts.append(description)
+        if price and price.lower() != "gratis":
+            desc_parts.append(f"Pris: {price}")
+        elif price.lower() == "gratis":
+            desc_parts.append("Gratis")
+        if tag:
+            desc_parts.append(f"Kategori: {tag}")
+        full_description = " | ".join(desc_parts) if desc_parts else None
+
+        # Parse main event date and time
+        main_date_str = fields.get("EventDate", {}).get("Value", "")
+        main_time_str = fields.get("EventTime", {}).get("Value", "").strip()
+        main_date = _parse_kk_date(main_date_str) if main_date_str else None
+
+        start_time, end_time = parse_time_range(main_time_str) if main_time_str else (None, None)
+
+        # Collect all dates: main date + related dates
+        all_dates: list[tuple[str | None, str | None, str | None]] = []  # (date, start_time, end_time)
+        if main_date:
+            all_dates.append((main_date, start_time, end_time))
+
+        # Related dates (for recurring events)
+        related_dates = fields.get("EventsRelatedDate", {}).get("Values", [])
+        related_times = fields.get("EventsRelatedTime", {}).get("Values", [])
+        for idx, rd in enumerate(related_dates):
+            rd_parsed = _parse_kk_date(rd)
+            if not rd_parsed:
+                continue
+            # Get matching time if available
+            rt = related_times[idx].strip() if idx < len(related_times) else ""
+            rt_start, rt_end = parse_time_range(rt) if rt else (start_time, end_time)
+            all_dates.append((rd_parsed, rt_start, rt_end))
+
+        # Filter out past dates and add events
+        for ev_date, ev_start, ev_end in all_dates:
+            if not ev_date:
+                continue
+            try:
+                if date.fromisoformat(ev_date) < today:
+                    continue
+            except ValueError:
+                continue
+
+            events.append({
+                "event_name": title,
+                "event_date": ev_date,
+                "start_time": ev_start,
+                "end_time": ev_end,
+                "location": f"{location}, {_KK_LOCATION_ADDRESSES.get(location, '')}".rstrip(", "),
+                "organizer": location,
+                "description": full_description,
+                "url": event_url,
+            })
+
+    return events
+
+
+def _fetch_kk_dummy(url: str) -> str:
+    """Dummy fetch for KK bibliotek — the parser uses the Cludo API directly."""
+    return ""
+
+
+# ────────────────── Generic KK Culture Events fetcher ──────────────────
+# Shared by Dansekapellet and Lygten Station (same KK CMS)
+
+def _fetch_kk_events(
+    url: str,
+    *,
+    base_url: str,
+    event_link_prefix: str,
+    location: str,
+    organizer: str,
+    exclude_titles: set[str] | None = None,
+    exclude_categories: set[str] | None = None,
+    gemini_date_ranges: bool = False,
+) -> str:
+    """
+    Generic Playwright-based fetcher for KK (Københavns Kommune) culture sites.
+    Handles:
+      - "Vis flere" pagination on listing page
+      - Cookie banner dismissal
+      - Flatpickr calendars with multiple dates
+      - Multiple time slots per date
+      - Optionally Gemini-based date extraction for date-range events
+    Returns JSON string of event dicts.
+    """
+    from playwright.sync_api import sync_playwright
+
+    exclude_titles = exclude_titles or set()
+    exclude_categories = exclude_categories or set()
+    events_data: list[dict] = []
+    today = date.today()
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 900},
+            locale="da-DK",
+        )
+        page = context.new_page()
+
+        # ─── Step 1: load listing page ───
+        log(f"  Loading {url} ...")
+        page.goto(url, wait_until="networkidle", timeout=30000)
+        page.wait_for_timeout(2000)
+
+        # Dismiss cookie banner
+        try:
+            cookie_btn = page.locator('button:has-text("Accepter alle cookies"), button:has-text("Acceptér alle cookies")')
+            if cookie_btn.count() > 0:
+                cookie_btn.first.click(timeout=3000)
+                page.wait_for_timeout(1000)
+                log("    Cookie banner dismissed.")
+        except Exception:
+            pass
+
+        # Handle "Vis flere" pagination
+        click_count = 0
+        while True:
+            try:
+                vis_flere = page.locator('a:has-text("Vis flere"), button:has-text("Vis flere")')
+                if vis_flere.count() > 0 and vis_flere.first.is_visible():
+                    vis_flere.first.click(timeout=5000)
+                    page.wait_for_timeout(2000)
+                    click_count += 1
+                else:
+                    break
+            except Exception:
+                break
+        if click_count:
+            log(f"    Clicked 'Vis flere' {click_count} time(s)")
+
+        # ─── Step 2: collect event links ───
+        soup = BeautifulSoup(page.content(), "html.parser")
+        event_links: list[dict] = []
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            # Match event detail links
+            if event_link_prefix in href and href != event_link_prefix and href.rstrip("/") != event_link_prefix.rstrip("/"):
+                slug = href.rstrip("/").rsplit("/", 1)[-1]
+                link_text = a.get_text(strip=True).lower()
+                # Check title exclusion
+                if any(ex in link_text for ex in exclude_titles) or \
+                   any(ex in slug for ex in exclude_titles):
+                    log(f"    Skipping excluded: {slug}")
+                    continue
+                full_url = f"{base_url}{href}" if href.startswith("/") else href
+                if full_url not in [el["url"] for el in event_links]:
+                    event_links.append({"slug": slug, "url": full_url})
+
+        log(f"  Found {len(event_links)} event(s) on listing page")
+
+        # ─── Step 3: visit each detail page ───
+        for ev_link in event_links:
+            ev_url = ev_link["url"]
+            slug = ev_link["slug"]
+            log(f"    Processing: {slug}")
+
+            try:
+                page.goto(ev_url, wait_until="networkidle", timeout=20000)
+                page.wait_for_timeout(2000)
+
+                # Dismiss cookie banner if it re-appears
+                page.evaluate(
+                    '() => { const el = document.getElementById("sliding-popup");'
+                    ' if (el) el.style.display = "none"; }'
+                )
+
+                detail_soup = BeautifulSoup(page.content(), "html.parser")
+
+                # Category check
+                if exclude_categories:
+                    page_category = None
+                    for tag in detail_soup.find_all(["span", "div", "a"]):
+                        txt = tag.get_text(strip=True).lower()
+                        if txt in ("forestilling", "bevægelse", "fællesskaber",
+                                   "kursus", "klasse", "workshop", "udstilling",
+                                   "comedy", "koncert", "musik"):
+                            page_category = txt
+                            break
+                    if page_category and page_category in exclude_categories:
+                        log(f"      Skipping (category '{page_category}'): {slug}")
+                        continue
+
+                # Title
+                title = None
+                for h1 in detail_soup.find_all("h1"):
+                    txt = h1.get_text(strip=True)
+                    if txt and not any(skip in txt.lower() for skip in
+                                       ["cookie", "primær", "brødkrumme", "navigation"]):
+                        title = txt
+                        break
+                if not title:
+                    title_tag = detail_soup.find("title")
+                    title = title_tag.get_text(strip=True).split("|")[0].strip() if title_tag else slug
+
+                # Double-check exclusion
+                if any(ex in title.lower() for ex in exclude_titles):
+                    log(f"      Skipping excluded: {title}")
+                    continue
+
+                # Description
+                body_field = detail_soup.find(class_="field--name-body")
+                description = body_field.get_text(strip=True)[:500] if body_field else None
+
+                # Price
+                price_parts = []
+                for el in detail_soup.find_all(string=lambda s: s and "kr." in s):
+                    t = el.strip()
+                    if "kr." in t and len(t) < 50 and "cookie" not in t.lower():
+                        price_parts.append(t)
+                if price_parts:
+                    price_info = " / ".join(price_parts[:3])
+                    if description:
+                        description = f"{description} | Pris: {price_info}"
+                    else:
+                        description = f"Pris: {price_info}"
+
+                # Expand date selector
+                try:
+                    page.click('summary:has-text("Vælg anden dato")', timeout=3000)
+                    page.wait_for_timeout(1500)
+                except Exception:
+                    pass
+
+                # Get all enabled dates from flatpickr
+                enabled_dates = page.evaluate('''() => {
+                    let fp = null;
+                    for (const el of document.querySelectorAll('*')) {
+                        if (el._flatpickr) { fp = el._flatpickr; break; }
+                    }
+                    if (!fp || !fp.config || !fp.config.enable) return [];
+                    return fp.config.enable.map(d => {
+                        const dt = new Date(d);
+                        return dt.getFullYear() + '-'
+                            + String(dt.getMonth()+1).padStart(2,'0') + '-'
+                            + String(dt.getDate()).padStart(2,'0');
+                    });
+                }''')
+
+                if not enabled_dates:
+                    # Fallback: displayed date/time
+                    date_span = detail_soup.find("span", class_="date")
+                    time_span = detail_soup.find("span", class_="time")
+                    if date_span:
+                        dtext = date_span.get_text(strip=True)
+                        if " - " in dtext and gemini_date_ranges:
+                            parts = dtext.split(" - ", 1)
+                            end_d = parse_danish_date(parts[1].strip())
+                            if end_d and date.fromisoformat(end_d) >= today:
+                                gemini_events = _dansekapellet_gemini_dates(
+                                    detail_soup, ev_url, title, description
+                                )
+                                if gemini_events:
+                                    for ge in gemini_events:
+                                        try:
+                                            if date.fromisoformat(ge["event_date"]) < today:
+                                                continue
+                                        except (ValueError, KeyError):
+                                            continue
+                                        events_data.append({
+                                            "event_name": ge.get("event_name", title),
+                                            "event_date": ge["event_date"],
+                                            "start_time": ge.get("start_time"),
+                                            "end_time": ge.get("end_time"),
+                                            "location": location,
+                                            "organizer": organizer,
+                                            "description": ge.get("description", description),
+                                            "url": ev_url,
+                                        })
+                                    log(f"      Gemini found {len(gemini_events)} date(s) in images")
+                                else:
+                                    start_d = parse_danish_date(parts[0].strip())
+                                    ev_date = start_d or end_d
+                                    st, et = parse_time_range(time_span.get_text(strip=True)) if time_span else (None, None)
+                                    desc_with_range = f"Program: {dtext}"
+                                    if description:
+                                        desc_with_range = f"{description} | {desc_with_range}"
+                                    events_data.append({
+                                        "event_name": title,
+                                        "event_date": ev_date,
+                                        "start_time": st,
+                                        "end_time": et,
+                                        "location": location,
+                                        "organizer": organizer,
+                                        "description": desc_with_range,
+                                        "url": ev_url,
+                                    })
+                        elif " - " in dtext and not gemini_date_ranges:
+                            # Date range but no Gemini — just use end date if future
+                            parts = dtext.split(" - ", 1)
+                            start_d = parse_danish_date(parts[0].strip())
+                            end_d = parse_danish_date(parts[1].strip())
+                            ev_date = start_d or end_d
+                            if ev_date and date.fromisoformat(ev_date) >= today:
+                                st, et = parse_time_range(time_span.get_text(strip=True)) if time_span else (None, None)
+                                events_data.append({
+                                    "event_name": title,
+                                    "event_date": ev_date,
+                                    "start_time": st,
+                                    "end_time": et,
+                                    "location": location,
+                                    "organizer": organizer,
+                                    "description": description,
+                                    "url": ev_url,
+                                })
+                        else:
+                            ev_date = parse_danish_date(dtext)
+                            if ev_date:
+                                st, et = parse_time_range(time_span.get_text(strip=True)) if time_span else (None, None)
+                                if date.fromisoformat(ev_date) >= today:
+                                    events_data.append({
+                                        "event_name": title,
+                                        "event_date": ev_date,
+                                        "start_time": st,
+                                        "end_time": et,
+                                        "location": location,
+                                        "organizer": organizer,
+                                        "description": description,
+                                        "url": ev_url,
+                                    })
+                    continue
+
+                log(f"      {len(enabled_dates)} date(s) in calendar")
+
+                # For each enabled date, click it and read time slots
+                for i, date_str in enumerate(enabled_dates):
+                    try:
+                        ev_date_obj = date.fromisoformat(date_str)
+                    except ValueError:
+                        continue
+                    if ev_date_obj < today:
+                        continue
+
+                    page.evaluate(f'''() => {{
+                        const days = document.querySelectorAll(
+                            '.flatpickr-day:not(.flatpickr-disabled):not(.prevMonthDay):not(.nextMonthDay)'
+                        );
+                        if (days.length > {i}) days[{i}].click();
+                    }}''')
+                    page.wait_for_timeout(800)
+
+                    time_slots = page.evaluate('''() => {
+                        const timesDiv = document.querySelector('.date-selector .times');
+                        if (!timesDiv) return [];
+                        const buttons = timesDiv.querySelectorAll('button');
+                        return Array.from(buttons).map(b => ({
+                            text: b.textContent.trim(),
+                            dataTime: b.getAttribute('data-time'),
+                        }));
+                    }''')
+
+                    if time_slots:
+                        for slot in time_slots:
+                            st, et = parse_time_range(slot["text"])
+                            if not st and slot.get("dataTime"):
+                                st = slot["dataTime"]
+                            events_data.append({
+                                "event_name": title,
+                                "event_date": date_str,
+                                "start_time": st,
+                                "end_time": et,
+                                "location": location,
+                                "organizer": organizer,
+                                "description": description,
+                                "url": ev_url,
+                            })
+                    else:
+                        detail_soup2 = BeautifulSoup(page.content(), "html.parser")
+                        time_span = detail_soup2.find("span", class_="time")
+                        st, et = parse_time_range(time_span.get_text(strip=True)) if time_span else (None, None)
+                        events_data.append({
+                            "event_name": title,
+                            "event_date": date_str,
+                            "start_time": st,
+                            "end_time": et,
+                            "location": location,
+                            "organizer": organizer,
+                            "description": description,
+                            "url": ev_url,
+                        })
+
+                time.sleep(0.5)
+
+            except Exception as e:
+                log(f"      ❌ Error processing {slug}: {e}")
+                continue
+
+        browser.close()
+
+    return json.dumps(events_data, ensure_ascii=False)
+
+
+def _parse_kk_events_json(html: str, page_url: str) -> list[dict]:
+    """Parse the JSON string produced by _fetch_kk_events."""
+    if not html:
+        return []
+    try:
+        return json.loads(html)
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+# ────────────────── Dansekapellet (dansekapellet.kk.dk) ──────────────────
+
+_DANSEKAPELLET_EXCLUDE_TITLES = {"legestuen"}  # always skip by name
+_DANSEKAPELLET_EXCLUDE_CATEGORIES = {"bevægelse"}  # skip class/movement categories
+_DANSEKAPELLET_ADDR = "Dansekapellet, Bispebjerg Torv 1, 2400 København NV"
+
+
+def _dansekapellet_gemini_dates(
+    soup: BeautifulSoup, event_url: str, title: str, description: str | None
+) -> list[dict]:
+    """
+    For Dansekapellet events with a date range (long-running programs/exhibitions),
+    download the page images and use Gemini to extract specific event dates.
+    Returns a list of event dicts with event_name, event_date, start_time, end_time, description.
+    """
+    client = get_gemini_client()
+    if not client:
+        log("      ⚠️ No Gemini client — skipping image analysis")
+        return []
+
+    from google.genai import types
+    from PIL import Image
+    import tempfile
+
+    # Collect images from the page
+    base_url = "https://dansekapellet.kk.dk"
+    image_parts = []
+    for img in soup.find_all("img"):
+        src = img.get("src", "")
+        if not src or any(skip in src.lower() for skip in ["logo", "icon", "svg", "placeholder"]):
+            continue
+        full_url = base_url + src if src.startswith("/") else src
+        try:
+            r = requests.get(full_url, timeout=15)
+            if r.status_code == 200 and len(r.content) > 2000:  # skip tiny images
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+                    f.write(r.content)
+                    tmp_path = f.name
+                img_obj = Image.open(tmp_path)
+                image_parts.append(img_obj)
+        except Exception:
+            continue
+
+    if not image_parts:
+        log("      No usable images found for Gemini analysis")
+        return []
+
+    # Get page text
+    body = soup.find(class_="field--name-body")
+    page_text = body.get_text(strip=True)[:3000] if body else ""
+
+    today_str = date.today().isoformat()
+    prompt = f"""This is an event/program page from Dansekapellet (a dance venue in Copenhagen).
+
+Event title: {title}
+Event URL: {event_url}
+Page text: {page_text[:2000]}
+
+The page shows a date range, meaning this is a long-running program with SPECIFIC individual event dates.
+Look at ALL the images carefully — the flyers/posters typically contain the individual dates and times.
+
+Extract ALL individual events/sessions with their specific dates and times.
+Only include events from {today_str} onward. Skip past dates.
+
+Respond ONLY with valid JSON:
+{{
+  "events": [
+    {{
+      "event_name": "{title}" or a more specific name if the image shows one,
+      "event_date": "YYYY-MM-DD",
+      "start_time": "HH:MM (24h)" or null,
+      "end_time": "HH:MM (24h)" or null,
+      "description": "Brief description of this specific session"
+    }}
+  ]
+}}
+
+If no specific dates can be found in the images, return {{"events": []}}.
+Respond ONLY with the JSON, no extra text."""
+
+    try:
+        _gemini_limiter.wait()
+        content = list(image_parts) + [prompt]
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=content,
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                max_output_tokens=4000,
+            ),
+        )
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        result = json.loads(text)
+        return result.get("events", [])
+    except Exception as e:
+        log(f"      Gemini analysis failed: {e}")
+        return []
+
+
+def fetch_dansekapellet(url: str) -> str:
+    """Fetch Dansekapellet events using the generic KK fetcher."""
+    return _fetch_kk_events(
+        url,
+        base_url="https://dansekapellet.kk.dk",
+        event_link_prefix="/events/",
+        location=_DANSEKAPELLET_ADDR,
+        organizer="Dansekapellet",
+        exclude_titles=_DANSEKAPELLET_EXCLUDE_TITLES,
+        exclude_categories=_DANSEKAPELLET_EXCLUDE_CATEGORIES,
+        gemini_date_ranges=True,
+    )
+
+
+def parse_dansekapellet(html: str, page_url: str) -> list[dict]:
+    return _parse_kk_events_json(html, page_url)
+
+
+# ────────────────── Lygten Station (kulturogfritidn.kk.dk) ──────────────────
+
+_LYGTENSTATION_ADDR = "Lygten Station, Lygten 2, 2400 København NV"
+
+
+def fetch_lygtenstation(url: str) -> str:
+    """Fetch Lygten Station events using the generic KK fetcher."""
+    return _fetch_kk_events(
+        url,
+        base_url="https://kulturogfritidn.kk.dk",
+        event_link_prefix="/det-sker/",
+        location=_LYGTENSTATION_ADDR,
+        organizer="Lygten Station",
+    )
+
+
+def parse_lygtenstation(html: str, page_url: str) -> list[dict]:
+    return _parse_kk_events_json(html, page_url)
+
+
+# ────────────────── Danish Church Calendar (TYPO3 tx-cal) ──────────────────
+# Shared by Tagensbo Kirke, Kapernaumskirken, and other Folkekirke websites.
+
+# Event types to exclude (religious services, not public events)
+_CHURCH_EXCLUDE = {
+    "højmesse", "gudstjeneste", "andagt", "liturgisk",
+    "skærtorsdag", "langfredag", "påskedag", "pinse",
+    "babysalmesang", "rytmik", "tumlerytmik", "minirytmik",
+    "spirekoret", "juniorkoret", "ungdomskoret",
+    "kirkekaffe", "motorik", "kontoret holder",
+}
+
+
+def _parse_church_calendar(
+    html: str,
+    page_url: str,
+    *,
+    location: str,
+    organizer: str,
+    base_url: str,
+) -> list[dict]:
+    """
+    Generic parser for Danish Folkekirke websites using the TYPO3 tx-cal plugin.
+    Each event is a div.calendar__item with .date, .month, .event-time,
+    h2.calendar__header, and a link containing the full date in the URL.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    today = date.today()
+    events: list[dict] = []
+
+    items = soup.find_all("div", class_="calendar__item")
+    log(f"  Found {len(items)} calendar item(s) on page")
+
+    for item in items:
+        # Title (some churches use h2, others h3)
+        title_el = item.find(["h2", "h3"], class_="calendar__header")
+        if not title_el:
+            continue
+        title = title_el.get_text(strip=True)
+
+        # Check exclusion: skip if any exclude keyword is in the title
+        title_lower = title.lower()
+        if any(ex in title_lower for ex in _CHURCH_EXCLUDE):
+            continue
+        # Skip cancelled events
+        if "aflyst" in title_lower:
+            continue
+        # Skip "henviser til" redirect notices
+        if "henviser til" in title_lower:
+            continue
+
+        # Date: extract from the detail link URL (format: /begivenhed/DD-M-YYYY-...)
+        link_el = item.find("a", href=True)
+        ev_date = None
+        ev_url = page_url
+        if link_el:
+            href = link_el["href"]
+            ev_url = f"{base_url}{href}" if href.startswith("/") else href
+            # Try to extract date from URL: /begivenhed/22-2-2026-...
+            m = re.search(r"/(\d{1,2})-(\d{1,2})-(\d{4})-", href)
+            if m:
+                day, month_num, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                try:
+                    ev_date = date(year, month_num, day).isoformat()
+                except ValueError:
+                    pass
+
+        # Fallback: parse from .date + .month spans
+        if not ev_date:
+            date_el = item.find("span", class_="date")
+            month_el = item.find("span", class_="month")
+            if date_el and month_el:
+                day_str = date_el.get_text(strip=True)
+                month_str = month_el.get_text(strip=True).rstrip(".")
+                date_text = f"{day_str} {month_str}"
+                ev_date = parse_danish_date(date_text)
+
+        if not ev_date:
+            continue
+
+        # Skip past events
+        try:
+            if date.fromisoformat(ev_date) < today:
+                continue
+        except ValueError:
+            continue
+
+        # Time
+        time_el = item.find("span", class_="event-time")
+        start_time = None
+        end_time = None
+        if time_el:
+            time_text = time_el.get_text(strip=True)
+            # Format: "kl. 16:00" or "kl. 16:00 - 17:30"
+            time_text = time_text.replace("kl.", "").strip()
+            start_time, end_time = parse_time_range(time_text)
+
+        # Description
+        desc_el = item.find("div", class_="calendarlist__teaser")
+        description = desc_el.get_text(strip=True)[:500] if desc_el else None
+
+        events.append({
+            "event_name": title,
+            "event_date": ev_date,
+            "start_time": start_time,
+            "end_time": end_time,
+            "location": location,
+            "organizer": organizer,
+            "description": description,
+            "url": ev_url,
+        })
+
+    return events
+
+
+# ── Tagensbo Kirke ──
+
+def parse_tagensbo(html: str, page_url: str) -> list[dict]:
+    return _parse_church_calendar(
+        html, page_url,
+        location="Tagensbo Kirke, Landsdommervej 35, 2400 København NV",
+        organizer="Tagensbo Kirke",
+        base_url="https://www.tagensbo.dk",
+    )
+
+
+# ── Kapernaumskirken (ChurchDesk widget — requires Playwright) ──
+
+_KAPERNAUMSKIRKEN_WIDGET = (
+    "https://widget.churchdesk.com/da/w/444/event/DIqjahiE56tG/1/1393468"
+)
+_KAPERNAUMSKIRKEN_ADDR = "Kapernaumskirken, Frederikssundsvej 45, 2400 København NV"
+
+
+def fetch_kapernaumskirken(url: str) -> str:
+    """Playwright fetcher for Kapernaumskirken's ChurchDesk event widget."""
+    from playwright.sync_api import sync_playwright
+
+    events_data: list[dict] = []
+    today = date.today()
+    from datetime import timedelta
+    max_date = today + timedelta(days=180)  # ~6 months ahead
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 900},
+            locale="da-DK",
+        )
+
+        log(f"  Loading ChurchDesk widget …")
+        page.goto(_KAPERNAUMSKIRKEN_WIDGET, wait_until="networkidle", timeout=30000)
+        page.wait_for_timeout(3000)
+
+        page_num = 0
+        hit_max_date = False
+        while True:
+            page_num += 1
+
+            raw_events = page.evaluate(r'''() => {
+                const cards = document.querySelectorAll(".ant-card");
+                const results = [];
+                cards.forEach(card => {
+                    const h2s = card.querySelectorAll("h2");
+                    const spans = card.querySelectorAll("span.ant-typography");
+                    let eventName = h2s.length > 1 ? h2s[1].textContent.trim() : "";
+                    let dateTime = "";
+                    let location = "";
+                    for (const span of spans) {
+                        const t = span.textContent.trim();
+                        if (/\d{4},\s*kl\./.test(t)) dateTime = t;
+                        else if (/^[A-ZÆØÅ]{3}\.?$/.test(t)) {} // month abbr
+                        else if (/^\d+$/.test(t)) {} // day number
+                        else if (t.length > 3 && !location) location = t;
+                    }
+                    results.push({eventName, dateTime, location});
+                });
+                return results;
+            }''')
+
+            if not raw_events:
+                break
+
+            log(f"    Page {page_num}: {len(raw_events)} event(s)")
+
+            for ev in raw_events:
+                name = ev.get("eventName", "")
+                if not name:
+                    continue
+
+                # Apply church exclusions
+                name_lower = name.lower()
+                if any(ex in name_lower for ex in _CHURCH_EXCLUDE):
+                    continue
+                if "aflyst" in name_lower or "lukket" in name_lower:
+                    continue
+
+                # Parse date/time: "Søndag 22. februar 2026, kl. 11:00 - 12:00"
+                dt_str = ev.get("dateTime", "")
+                if not dt_str:
+                    continue
+
+                ev_date = None
+                start_time = None
+                end_time = None
+
+                # Extract date
+                dm = re.search(
+                    r"(\d{1,2})\.\s+"
+                    r"(januar|februar|marts|april|maj|juni|juli|august|"
+                    r"september|oktober|november|december)\s+(\d{4})",
+                    dt_str, re.IGNORECASE,
+                )
+                if dm:
+                    _MONTHS_DA = {
+                        "januar": 1, "februar": 2, "marts": 3, "april": 4,
+                        "maj": 5, "juni": 6, "juli": 7, "august": 8,
+                        "september": 9, "oktober": 10, "november": 11, "december": 12,
+                    }
+                    day = int(dm.group(1))
+                    month = _MONTHS_DA.get(dm.group(2).lower(), 0)
+                    year = int(dm.group(3))
+                    if month:
+                        try:
+                            ev_date = date(year, month, day).isoformat()
+                        except ValueError:
+                            pass
+
+                if not ev_date:
+                    continue
+
+                # Skip past events and events too far in the future
+                try:
+                    ev_date_obj = date.fromisoformat(ev_date)
+                    if ev_date_obj < today:
+                        continue
+                    if ev_date_obj > max_date:
+                        hit_max_date = True
+                        continue
+                except ValueError:
+                    continue
+
+                # Extract time: "kl. 11:00 - 12:00" or "kl. 10:30"
+                tm = re.search(r"kl\.\s*(\d{1,2}[:.]\d{2})\s*(?:-\s*(\d{1,2}[:.]\d{2}))?", dt_str)
+                if tm:
+                    start_time = tm.group(1).replace(".", ":")
+                    if tm.group(2):
+                        end_time = tm.group(2).replace(".", ":")
+
+                loc = ev.get("location", "") or _KAPERNAUMSKIRKEN_ADDR
+
+                events_data.append({
+                    "event_name": name,
+                    "event_date": ev_date,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "location": loc,
+                    "organizer": "Kapernaumskirken",
+                    "description": None,
+                    "url": "https://www.kapernaumskirken.dk/begivenheder--faellesskaber",
+                })
+
+            # Stop if all events on this page were beyond max date
+            if hit_max_date and not raw_events:
+                break
+
+            # Try clicking next page
+            next_btn = page.query_selector('button[aria-label="Næste side"]')
+            if next_btn and next_btn.is_enabled():
+                next_btn.click()
+                page.wait_for_timeout(2000)
+            else:
+                break
+
+            if page_num > 50:  # safety limit
+                break
+
+        browser.close()
+
+    log(f"  Total after filtering: {len(events_data)} event(s)")
+    return json.dumps(events_data, ensure_ascii=False)
+
+
+def parse_kapernaumskirken(html: str, page_url: str) -> list[dict]:
+    """Parse pre-fetched JSON from fetch_kapernaumskirken."""
+    try:
+        return json.loads(html)
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+# ── Ansgarkirken ──
+
+def parse_ansgarkirken(html: str, page_url: str) -> list[dict]:
+    return _parse_church_calendar(
+        html, page_url,
+        location="Ansgarkirken, Sallingvej 35, 2720 Vanløse",
+        organizer="Ansgarkirken",
+        base_url="https://www.ansgarkirke.dk",
+    )
+
+
 # ────────────────── Parser registry ──────────────────
 # Key = lowercase name matching source_mapping.csv "name" column
 # Value = (parser_function, events_page_url) for simple HTTP fetch
@@ -1865,6 +3056,29 @@ SITE_PARSERS: dict[str, tuple] = {
     "demokratigarage": (parse_demokratigarage, "https://www.demokratigarage.dk/kalender/", fetch_demokratigarage),
     "tegneskole kbh": (parse_tegneskolekbh, "https://www.tegneskolekbh.dk/workshops/"),
     "urban 13": (parse_urban13, "https://www.urban13.dk/events"),
+    "nordic health house": (parse_norhouse, "https://nor.house/events/"),
+    "biblioteket rentemestervej": (
+        parse_kk_bibliotek,
+        "https://bibliotek.kk.dk/arrangementer/soeg#?cludoquery=*&cludoCategory=Arrangementer&cludoLocation=BIBLIOTEKET%20Rentemestervej&cludosort=SortDate_date%3Dasc&cludopage=1&cludoinputtype=standard",
+        _fetch_kk_dummy,
+    ),
+    "dansekapellet": (
+        parse_dansekapellet,
+        "https://dansekapellet.kk.dk/events",
+        fetch_dansekapellet,
+    ),
+    "lygten station": (
+        parse_lygtenstation,
+        "https://kulturogfritidn.kk.dk/det-sker?place%5B0%5D=Lygten%20Station&title=Det%20sker%20p%C3%A5%20Lygten%20Station",
+        fetch_lygtenstation,
+    ),
+    "tagensbo kirke": (parse_tagensbo, "https://www.tagensbo.dk/aktiviteter-i-kirken"),
+    "ansgarkirken": (parse_ansgarkirken, "https://www.ansgarkirke.dk/kalender"),
+    "kapernaumskirken": (
+        parse_kapernaumskirken,
+        "https://www.kapernaumskirken.dk/begivenheder--faellesskaber",
+        fetch_kapernaumskirken,
+    ),
 }
 
 
@@ -1895,6 +3109,9 @@ def notion_existing_entries() -> tuple[dict, list]:
             source = source_parts[0]["text"]["content"] if source_parts else ""
             date_prop = (props.get("Start Date") or {}).get("date") or {}
             start_date = date_prop.get("start", "")
+            # Extract start time for dedup key (handles multiple time slots per day)
+            start_time_parts = (props.get("Start Time") or {}).get("rich_text", [])
+            start_time = start_time_parts[0]["text"]["content"] if start_time_parts else ""
 
             entry = {
                 "page_id": page["id"],
@@ -1905,9 +3122,13 @@ def notion_existing_entries() -> tuple[dict, list]:
             }
             all_entries.append(entry)
             if url_val:
-                # Use url##date as dedup key (same page can have multiple events on different dates)
-                dedup_key = f"{url_val}##{start_date}"
+                # Use url##date##time as dedup key (same page can have multiple time slots per day)
+                dedup_key = f"{url_val}##{start_date}##{start_time}"
                 url_to_page[dedup_key] = page["id"]
+                # Also keep url##date key for backward compat
+                dedup_key_no_time = f"{url_val}##{start_date}"
+                if dedup_key_no_time not in url_to_page:
+                    url_to_page[dedup_key_no_time] = page["id"]
                 # Also keep plain URL key for backward compat with FB/IG entries
                 if url_val not in url_to_page:
                     url_to_page[url_val] = page["id"]
@@ -2144,9 +3365,14 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
                 ev["possible_duplicate"] = True
                 flagged_dupes += 1
 
-        # Deduplicate by URL + date (same page can describe multiple events on different dates)
-        dedup_key = f"{event_url}##{ev.get('start_date', '')}"
+        # Deduplicate by URL + date + time (same page can have multiple time slots per day)
+        start_time_part = ev.get("start_time_disp", "") or ""
+        dedup_key = f"{event_url}##{ev.get('start_date', '')}##{start_time_part}"
         page_id = existing.get(dedup_key)
+        # Also check without time for backward compat
+        if not page_id:
+            dedup_key_no_time = f"{event_url}##{ev.get('start_date', '')}"
+            page_id = existing.get(dedup_key_no_time)
 
         if page_id:
             # Update existing

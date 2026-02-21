@@ -216,6 +216,42 @@ def download_first_image(post, tmp_dir: str) -> str | None:
     return None
 
 
+def download_all_images(post, tmp_dir: str) -> list[str]:
+    """Download ALL images from a post (including all carousel slides).
+    Returns a list of file paths."""
+    paths = []
+    try:
+        if post.typename == "GraphSidecar":
+            # Carousel post — download each slide
+            for idx, node in enumerate(post.get_sidecar_nodes()):
+                if not node.is_video:
+                    img_url = node.display_url
+                    response = requests.get(img_url, timeout=30)
+                    if response.status_code == 200:
+                        filepath = os.path.join(tmp_dir, f"{post.shortcode}_{idx}.jpg")
+                        with open(filepath, "wb") as f:
+                            f.write(response.content)
+                        paths.append(filepath)
+        else:
+            # Single image post
+            img_url = post.url
+            response = requests.get(img_url, timeout=30)
+            if response.status_code == 200:
+                filepath = os.path.join(tmp_dir, f"{post.shortcode}.jpg")
+                with open(filepath, "wb") as f:
+                    f.write(response.content)
+                paths.append(filepath)
+    except Exception as e:
+        if DEBUG:
+            log(f"  Image download failed for {post.shortcode}: {e}")
+        # Fall back to first image only
+        if not paths:
+            first = download_first_image(post, tmp_dir)
+            if first:
+                paths.append(first)
+    return paths
+
+
 # -------------------- AI Analysis (Gemini) --------------------
 def setup_gemini():
     """Configure the Gemini API client."""
@@ -224,23 +260,51 @@ def setup_gemini():
 
 
 def analyze_post_with_gemini(
-    client, caption: str, image_path: str | None, account: str
+    client, caption: str, image_paths: list[str] | str | None, account: str
 ) -> list[dict]:
     """
-    Send post caption + image to Gemini. Returns a list of event dicts.
+    Send post caption + ALL images to Gemini. Returns a list of event dicts.
     A single post can contain multiple events (different dates, different events).
     Returns empty list if no events found.
+
+    image_paths can be:
+      - a list of file paths (carousel slides)
+      - a single string path (backward compat)
+      - None
     """
+    # Normalize image_paths to a list
+    if image_paths is None:
+        img_list: list[str] = []
+    elif isinstance(image_paths, str):
+        img_list = [image_paths]
+    else:
+        img_list = image_paths
+
+    n_images = len(img_list)
+    image_note = (
+        f"This post has {n_images} image slide(s). Check ALL of them for event details — "
+        "event info is often on later slides (e.g. a flyer on slide 2, a schedule on slide 3)."
+        if n_images > 1
+        else "Check both the caption AND the image for event details."
+    )
+
     prompt = f"""Analyze this Instagram post from @{account}.
 
 Caption: {caption or '(no caption)'}
 
+{image_note}
+
 Your task:
-1. Determine if this post announces one or more EVENTS (concert, workshop, exhibition, market, party, talk, screening, opening, festival, dinner, quiz, etc.)
+1. Determine if this post announces one or more EVENTS (concert, workshop, exhibition, market, party, talk, screening, opening, festival, dinner, quiz, film screening, book club, lecture, class, pop-up, etc.)
 2. If YES, extract ALL events. A single post may contain MULTIPLE events — for example:
    - The same event happening on different dates (e.g. "every Tuesday in March" = 4 separate events)
    - Different events listed in the same post
    - An event with multiple sessions at different times on different days
+
+IMPORTANT: Analyze BOTH the caption text AND the image(s) INDEPENDENTLY.
+- If the CAPTION mentions a date, time, or event name → it IS an event, regardless of what the image shows.
+- If an IMAGE contains a flyer, poster, or schedule with dates/times → it IS an event, regardless of the caption.
+- Event info can be split: name in the caption, date in the image, or vice versa.
 
 Respond ONLY with valid JSON — an array of events:
 
@@ -263,18 +327,20 @@ Rules:
 - The current date is {datetime.now().strftime('%Y-%m-%d')}. If no year is mentioned, assume the next upcoming occurrence.
 - If the same event repeats on multiple dates, create a SEPARATE entry for EACH date.
 - If NO events are found, return {{"events": []}}
-- Be conservative: if it's unclear whether something is an event, don't include it.
-- Read both the caption AND the image carefully — event details are often only in the image.
+- ALWAYS include events even if the date is in the past — we filter past events separately.
+- Read ALL images carefully — event details (dates, times, locations) are often only in later slides of the carousel.
+- A caption like "Fredag d. 20. februar kl. 10" IS an event — don't skip it just because the image looks generic.
 - For tagged_accounts: extract ALL @mentions from the caption (not @{account} itself). Include collaborators, performers, DJs, venues, etc. If none found, return an empty list.
 - Respond ONLY with the JSON, no extra text."""
 
     try:
         content_parts = []
 
-        # Add image if available
-        if image_path and os.path.exists(image_path):
-            img = Image.open(image_path)
-            content_parts.append(img)
+        # Add ALL images (carousel slides)
+        for img_path in img_list:
+            if img_path and os.path.exists(img_path):
+                img = Image.open(img_path)
+                content_parts.append(img)
 
         content_parts.append(prompt)
 
@@ -511,29 +577,31 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
         post_url = f"https://www.instagram.com/p/{post.shortcode}/"
         caption = post.caption or ""
 
-        # Download image for vision analysis
-        image_path = download_first_image(post, tmp_dir)
+        # Download ALL images for vision analysis (carousel slides)
+        image_paths = download_all_images(post, tmp_dir)
+        if DEBUG and len(image_paths) > 1:
+            log(f"  Downloaded {len(image_paths)} carousel slides for {post_url}")
 
         # Analyze with Gemini — returns a LIST of events
-        events = analyze_post_with_gemini(client, caption, image_path, account)
+        events = analyze_post_with_gemini(client, caption, image_paths, account)
 
         if not events:
-            if DEBUG:
-                log(f"  No events in post: {post_url}")
+            log(f"  Not an event: {post_url}")
             skipped += 1
             continue
 
         log(f"  Found {len(events)} event(s) in post: {post_url}")
         total_events += len(events)
 
+        past_count = 0
         for event_data in events:
             # Skip past events
             event_date_str = event_data.get("event_date")
             if event_date_str:
                 try:
                     if date.fromisoformat(event_date_str) < date.today():
-                        if DEBUG:
-                            log(f"  Skipping past event: {event_data.get('event_name')} ({event_date_str})")
+                        past_count += 1
+                        log(f"  Skipping past event: {event_data.get('event_name')} ({event_date_str})")
                         continue
                 except ValueError:
                     pass

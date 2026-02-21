@@ -39,13 +39,15 @@ def load_source_mapping() -> dict[str, set[str]]:
     """
     Load source_mapping.csv and build a lookup: source_id → set of all aliases.
 
-    Each row has: name, instagram, facebook
-    We group the IG handle and FB page identifier together so we can check
-    if two sources refer to the same venue.
+    Each row has: name, instagram, facebook, ..., website
+    We group the entity name, IG handle, and FB page identifier together so we
+    can check if two sources refer to the same venue — including the website
+    scraper which uses the entity name (e.g. "lygten station") as its source.
 
     Returns e.g.:
-        {"gamma_nv": {"gamma_nv", "61556180883930"},
-         "61556180883930": {"gamma_nv", "61556180883930", "gammabrewing"}, ...}
+        {"gamma_nv": {"gamma_nv", "61556180883930", "gamma"},
+         "61556180883930": {"gamma_nv", "61556180883930", "gamma"},
+         "gamma": {"gamma_nv", "61556180883930", "gamma"}, ...}
     """
     groups: dict[str, set[str]] = {}
     path = Path(MAPPING_FILE)
@@ -55,18 +57,22 @@ def load_source_mapping() -> dict[str, set[str]]:
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
+            name = (row.get("name") or "").strip().lower()
             ig = (row.get("instagram") or "").strip().lower()
             fb_raw = (row.get("facebook") or "").strip()
-
-            if not ig and not fb_raw:
-                continue
 
             # Extract FB identifier from URL
             fb_id = _extract_fb_id(fb_raw).lower() if fb_raw else ""
 
-            identifiers = {x for x in [ig, fb_id] if x}
+            # Collect all identifiers for this entity:
+            # entity name (used by website scraper as source key),
+            # IG handle, and FB page id
+            identifiers = {x for x in [name, ig, fb_id] if x}
+            if not identifiers:
+                continue
+
             if len(identifiers) < 2:
-                # Only one platform — nothing to map
+                # Only one identifier — nothing to cross-reference
                 for ident in identifiers:
                     groups.setdefault(ident, set()).add(ident)
                 continue
@@ -100,28 +106,76 @@ def _extract_fb_id(url: str) -> str:
     return url
 
 
+_DANISH_MONTHS = r"(?:jan(?:uar)?|feb(?:ruar)?|mar(?:ts)?|apr(?:il)?|maj|jun[ie]?|jul[ie]?|aug(?:ust)?|sep(?:tember)?|okt(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+
+
 def normalize_text(text: str) -> str:
     """Normalize text for comparison: lowercase, remove punctuation, collapse spaces."""
     text = text.lower().strip()
+    # Strip trailing date references like "- 3. april", "- 6. marts"
+    text = re.sub(rf"\s*[-–]\s*\d{{1,2}}\.?\s*{_DANISH_MONTHS}\.?\s*$", "", text)
     text = re.sub(r"[^\w\s]", " ", text)  # remove punctuation
     text = re.sub(r"\s+", " ", text)      # collapse whitespace
     return text
 
 
+def _strip_date_suffix(text: str) -> str:
+    """Strip trailing date references like '- 3. april' from event names."""
+    return re.sub(rf"\s*[-–]\s*\d{{1,2}}\.?\s*{_DANISH_MONTHS}\.?\s*$", "", text.lower().strip())
+
+
+def _compress(text: str) -> str:
+    """Remove all spaces and punctuation for substring matching."""
+    return re.sub(r"[^a-zæøå0-9]", "", _strip_date_suffix(text))
+
+
+def _trigrams(text: str) -> set[str]:
+    """Generate character trigrams from text."""
+    t = _compress(text)
+    if len(t) < 3:
+        return {t} if t else set()
+    return {t[i:i+3] for i in range(len(t) - 2)}
+
+
 def similarity(a: str, b: str) -> float:
     """
-    Simple word-overlap similarity (Jaccard index on words).
+    Multi-strategy similarity for event name matching.
+    Combines word-level Jaccard, compressed containment, and character trigrams.
     Returns 0.0 to 1.0.
     """
     if not a or not b:
         return 0.0
+
+    # Strategy 1: word-level Jaccard
     words_a = set(normalize_text(a).split())
     words_b = set(normalize_text(b).split())
-    if not words_a or not words_b:
-        return 0.0
-    intersection = words_a & words_b
-    union = words_a | words_b
-    return len(intersection) / len(union)
+    word_sim = 0.0
+    if words_a and words_b:
+        word_sim = len(words_a & words_b) / len(words_a | words_b)
+
+    # Strategy 2: compressed containment (handles compound words like
+    # "ImproSecco" vs "Impro-show med Impro-secco")
+    ca, cb = _compress(a), _compress(b)
+    containment = 0.0
+    if ca and cb:
+        shorter, longer = (ca, cb) if len(ca) <= len(cb) else (cb, ca)
+        if shorter in longer:
+            containment = len(shorter) / len(longer)
+            # If the shorter string is a significant portion of the longer one,
+            # treat as high similarity
+            if containment >= 0.4:
+                containment = max(containment, 0.85)
+
+    # Strategy 3: character trigram Jaccard (handles word-form variations like
+    # "kaoskomplottet" vs "kaoskomplottets")
+    tri_a = _trigrams(a)
+    tri_b = _trigrams(b)
+    trigram_sim = 0.0
+    if tri_a and tri_b:
+        trigram_sim = len(tri_a & tri_b) / len(tri_a | tri_b)
+
+    # Return the best of all strategies
+    return max(word_sim, containment, trigram_sim)
 
 
 def _normalize_source(source: str) -> str:
