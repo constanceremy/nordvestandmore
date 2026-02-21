@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  CREDIT_CARD
+  CASH
+}
+
+enum TransactionKind {
+  EXPENSE
+  INCOME
+  TRANSFER
+}
+
+enum TransactionStatus {
+  PLANNED
+  PAID
+}
+
+enum RecurrenceFrequency {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile   Profile?
+}
+
+model Profile {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  primaryCurrency     String   @default("DKK")
+  timezone            String   @default("Europe/Copenhagen")
+  onboardingCompleted Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accounts        Account[]
+  categories      Category[]
+  transactions    Transaction[]
+  recurrenceRules RecurrenceRule[]
+}
+
+model Account {
+  id                 String      @id @default(uuid())
+  profileId          String
+  name               String
+  type               AccountType @default(CHECKING)
+  currency           String      @default("DKK")
+  openingBalance     Decimal     @default(0)
+  openingBalanceDate DateTime    @default(now())
+  archived           Boolean     @default(false)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  profile Profile           @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  lines   TransactionLine[]
+}
+
+model Category {
+  id        String   @id @default(uuid())
+  profileId String
+  name      String
+  parentId  String?
+  sortOrder Int      @default(0)
+  archived  Boolean  @default(false)
+  monthlyBudget Decimal?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile  Profile           @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  parent   Category?         @relation("CategoryParent", fields: [parentId], references: [id])
+  children Category[]        @relation("CategoryParent")
+  lines    TransactionLine[]
+
+  @@unique([profileId, name])
+}
+
+model Transaction {
+  id        String            @id @default(uuid())
+  profileId String
+  kind      TransactionKind
+  status    TransactionStatus @default(PLANNED)
+
+  // Always filled (even for planned)
+  paidAt DateTime
+
+  // First day of the month bucket (e.g., 2026-02-01)
+  effectiveForMonth DateTime?
+
+  description String
+  notes       String?
+
+  // Recurrence
+  recurrenceRuleId String?
+  recurrenceRule   RecurrenceRule? @relation(fields: [recurrenceRuleId], references: [id], onDelete: SetNull)
+
+  // Future bank sync hooks (unused in MVP)
+  externalSource String?
+  externalId     String?
+  importedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile Profile           @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  lines   TransactionLine[]
+}
+
+model TransactionLine {
+  id            String  @id @default(uuid())
+  transactionId String
+  accountId     String
+  categoryId    String?
+
+  // Signed: negative leaves account, positive enters
+  amount   Decimal
+  currency String
+
+  memo String?
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account     Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category    Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([transactionId])
+}
+
+model RecurrenceRule {
+  id        String @id @default(uuid())
+  profileId String
+
+  title         String
+  kind          TransactionKind
+  statusDefault TransactionStatus @default(PLANNED)
+
+  startDate   DateTime
+  repeatUntil DateTime?
+
+  frequency RecurrenceFrequency
+  interval  Int                 @default(1) // e.g., every 2 weeks, every 3 months
+  
+  // For "nth weekday of month" patterns (e.g., 3rd Monday)
+  dayOfWeek Int? // 0=Sunday, 1=Monday, ..., 6=Saturday
+  weekOfMonth Int? // 1=first, 2=second, 3=third, 4=fourth, -1=last
+
+  // Defaults (keep simple for MVP)
+  defaultAccountId  String?
+  defaultCategoryId String?
+
+  // Transfers
+  fromAccountId String?
+  toAccountId   String?
+
+  // Store split templates later if needed
+  splitTemplate Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile      Profile       @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+}

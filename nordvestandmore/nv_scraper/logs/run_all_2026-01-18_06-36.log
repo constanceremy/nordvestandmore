@@ -1,0 +1,67 @@
+===== NV SCRAPERS: Sun Jan 18 06:36:27 CET 2026 =====
+
+--- START run_lygten.sh ---
+>>> Runner: run_lygten.sh | Location: Lygten Station
+Traceback (most recent call last):
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/urllib3/response.py", line 779, in _error_catcher
+    yield
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/urllib3/response.py", line 1248, in read_chunked
+    self._update_chunk_length()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/urllib3/response.py", line 1167, in _update_chunk_length
+    line = self._fp.fp.readline()  # type: ignore[union-attr]
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/socket.py", line 719, in readinto
+    return self._sock.recv_into(b)
+           ~~~~~~~~~~~~~~~~~~~~^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/ssl.py", line 1304, in recv_into
+    return self.read(nbytes, buffer)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/ssl.py", line 1138, in read
+    return self._sslobj.read(len, buffer)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+ConnectionResetError: [Errno 54] Connection reset by peer
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/requests/models.py", line 820, in generate
+    yield from self.raw.stream(chunk_size, decode_content=True)
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/urllib3/response.py", line 1088, in stream
+    yield from self.read_chunked(amt, decode_content=decode_content)
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/urllib3/response.py", line 1231, in read_chunked
+    with self._error_catcher():
+         ~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/urllib3/response.py", line 806, in _error_catcher
+    raise ProtocolError(f"Connection broken: {e!r}", e) from e
+urllib3.exceptions.ProtocolError: ("Connection broken: ConnectionResetError(54, 'Connection reset by peer')", ConnectionResetError(54, 'Connection reset by peer'))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/scrape_to_notion.py", line 278, in <module>
+    main()
+    ~~~~^^
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/scrape_to_notion.py", line 223, in main
+    items = parse_listing(LIST_URL)
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/scrape_to_notion.py", line 47, in parse_listing
+    soup = get_soup(url)
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/scrape_to_notion.py", line 41, in get_soup
+    r = requests.get(url, headers=SCRAPER_HEADERS, timeout=30)
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/requests/api.py", line 73, in get
+    return request("get", url, params=params, **kwargs)
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/requests/sessions.py", line 746, in send
+    r.content
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/requests/models.py", line 902, in content
+    self._content = b"".join(self.iter_content(CONTENT_CHUNK_SIZE)) or b""
+                    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/requests/models.py", line 822, in generate
+    raise ChunkedEncodingError(e)
+requests.exceptions.ChunkedEncodingError: ("Connection broken: ConnectionResetError(54, 'Connection reset by peer')", ConnectionResetError(54, 'Connection reset by peer'))

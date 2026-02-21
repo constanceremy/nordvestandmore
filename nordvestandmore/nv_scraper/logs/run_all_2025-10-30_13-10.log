@@ -1,0 +1,18 @@
+===== NV SCRAPERS: Thu Oct 30 13:10:44 CET 2025 =====
+
+--- START run_lygten.sh ---
+>>> Runner: run_lygten.sh | Location: Lygten Station
+Traceback (most recent call last):
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/scrape_to_notion.py", line 278, in <module>
+    main()
+    ~~~~^^
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/scrape_to_notion.py", line 223, in main
+    items = parse_listing(LIST_URL)
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/scrape_to_notion.py", line 47, in parse_listing
+    soup = get_soup(url)
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/scrape_to_notion.py", line 42, in get_soup
+    r.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "/Users/constanceremy/Documents/nordvestandmore/nv_scraper/.venv/lib/python3.13/site-packages/requests/models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 500 Server Error: 500 Service unavailable (with message) for url: https://kulturogfritidn.kk.dk/det-sker?place%5B0%5D=Lygten%20Station&title=Det%20sker%20p%C3%A5%20Lygten%20Station
