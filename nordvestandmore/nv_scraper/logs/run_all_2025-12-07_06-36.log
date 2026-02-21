@@ -1,0 +1,67 @@
+===== NV SCRAPERS: Sun Dec  7 06:36:24 CET 2025 =====
+
+--- START run_lygten.sh ---
+>>> Runner: run_lygten.sh | Location: Lygten Station
+[LYGTEN_STATION] Found 17 event rows
+[LYGTEN_STATION] ✅ Created 0, Updated 17, Skipped 0
+--- END run_lygten.sh ---
+
+--- START run_thoravej29.sh ---
+[THORAVEJ29] LIST_URL=https://www.thoravej29.dk/en/events LOCATION=Thoravej 29
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/events
+[THORAVEJ29] fetch https://www.thoravej29.dk/events
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/events?page=2
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/events?page=3
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/events?page=4
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/events?page=5
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/events?page=6
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/events?page=7
+[THORAVEJ29] fetch https://www.thoravej29.dk/events?page=2
+[THORAVEJ29] fetch https://www.thoravej29.dk/events?page=3
+[THORAVEJ29] fetch https://www.thoravej29.dk/events?page=4
+[THORAVEJ29] fetch https://www.thoravej29.dk/events?page=5
+[THORAVEJ29] fetch https://www.thoravej29.dk/events?page=6
+[THORAVEJ29] fetch https://www.thoravej29.dk/events?page=7
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/events/page/2/
+[THORAVEJ29] listing fetch fail https://www.thoravej29.dk/en/events/page/2/: 404 Client Error: Not Found for url: https://www.thoravej29.dk/en/events/page/2
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/events/page/3/
+[THORAVEJ29] listing fetch fail https://www.thoravej29.dk/en/events/page/3/: 404 Client Error: Not Found for url: https://www.thoravej29.dk/en/events/page/3
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/events/page/4/
+[THORAVEJ29] listing fetch fail https://www.thoravej29.dk/en/events/page/4/: 404 Client Error: Not Found for url: https://www.thoravej29.dk/en/events/page/4
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/events/page/5/
+[THORAVEJ29] listing fetch fail https://www.thoravej29.dk/en/events/page/5/: 404 Client Error: Not Found for url: https://www.thoravej29.dk/en/events/page/5
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/events/page/6/
+[THORAVEJ29] listing fetch fail https://www.thoravej29.dk/en/events/page/6/: 404 Client Error: Not Found for url: https://www.thoravej29.dk/en/events/page/6
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/events/page/7/
+[THORAVEJ29] listing parse fail https://www.thoravej29.dk/en/events/page/7/: HTTPSConnectionPool(host='www.thoravej29.dk', port=443): Read timed out. (read timeout=30)
+[THORAVEJ29] fetch https://www.thoravej29.dk/events/page/2/
+[THORAVEJ29] listing fetch fail https://www.thoravej29.dk/events/page/2/: 404 Client Error: Not Found for url: https://www.thoravej29.dk/da/events/page/2
+[THORAVEJ29] fetch https://www.thoravej29.dk/events/page/3/
+[THORAVEJ29] listing fetch fail https://www.thoravej29.dk/events/page/3/: 404 Client Error: Not Found for url: https://www.thoravej29.dk/da/events/page/3
+[THORAVEJ29] fetch https://www.thoravej29.dk/events/page/4/
+[THORAVEJ29] listing fetch fail https://www.thoravej29.dk/events/page/4/: 404 Client Error: Not Found for url: https://www.thoravej29.dk/da/events/page/4
+[THORAVEJ29] fetch https://www.thoravej29.dk/events/page/5/
+[THORAVEJ29] listing fetch fail https://www.thoravej29.dk/events/page/5/: 404 Client Error: Not Found for url: https://www.thoravej29.dk/da/events/page/5
+[THORAVEJ29] fetch https://www.thoravej29.dk/events/page/6/
+[THORAVEJ29] listing fetch fail https://www.thoravej29.dk/events/page/6/: 404 Client Error: Not Found for url: https://www.thoravej29.dk/da/events/page/6
+[THORAVEJ29] fetch https://www.thoravej29.dk/events/page/7/
+[THORAVEJ29] listing fetch fail https://www.thoravej29.dk/events/page/7/: 404 Client Error: Not Found for url: https://www.thoravej29.dk/da/events/page/7
+[THORAVEJ29] listing anchors seen: 182
+[THORAVEJ29] regex link hits: 28
+[THORAVEJ29] collected event links: 4
+[THORAVEJ29] Collected 4 event URLs
+[THORAVEJ29] preload URLs: 77
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/event/session-8
+[THORAVEJ29] fetch https://www.thoravej29.dk/en/event/hyggeligt-aebleskivevaerksted-hos-thoras
+[THORAVEJ29] fetch https://www.thoravej29.dk/da/event/session-8
+[THORAVEJ29] fetch https://www.thoravej29.dk/da/event/hyggeligt-aebleskivevaerksted-hos-thoras
+[THORAVEJ29] ✅ Created 2, Updated 2, Skipped 0
+--- END run_thoravej29.sh ---
+
+--- START run_vierrummet.sh ---
+[VIERRUMMET] LIST_URL=https://www.vierrummet.dk/ LOCATION=Vier Rummet
+[VIERRUMMET] Collected 0 event URLs
+[VIERRUMMET] ✅ Created 0, Updated 0, Skipped 0
+--- END run_vierrummet.sh ---
+
+===== DONE: Sun Dec  7 07:04:27 CET 2025 =====

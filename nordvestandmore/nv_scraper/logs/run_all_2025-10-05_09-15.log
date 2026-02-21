@@ -1,0 +1,9 @@
+===== NV SCRAPERS: Sun Oct  5 09:15:03 CEST 2025 =====
+
+--- START run_lygten.sh ---
+>>> Runner: run_lygten.sh | Location: Lygten Station
+[LYGTEN_STATION] Found 27 event rows
+[LYGTEN_STATION] ✅ Created 0, Updated 27, Skipped 0
+--- END run_lygten.sh ---
+
+===== DONE: Sun Oct  5 09:15:51 CEST 2025 =====
