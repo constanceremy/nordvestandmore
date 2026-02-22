@@ -11,6 +11,7 @@ individual event instances for the next N months (default: 6).
 
 from datetime import date, timedelta
 import calendar
+from auto_tag import classify_event
 
 
 # ────────────────── Schedule helpers ──────────────────
@@ -58,13 +59,15 @@ def _nth_weekday_of_month(weekday: int, n: int, months: list[int],
                 continue
             # Find all occurrences of that weekday in the month
             cal = calendar.monthcalendar(year, month)
-            count = 0
-            for week in cal:
-                if week[weekday] != 0:
-                    count += 1
-                    if count == n:
-                        dates.append(date(year, month, week[weekday]))
-                        break
+            occurrences = [week[weekday] for week in cal if week[weekday] != 0]
+            if n < 0:
+                # Negative n: count from end (-1 = last, -2 = second to last)
+                idx = n
+                if abs(idx) <= len(occurrences):
+                    dates.append(date(year, month, occurrences[idx]))
+            else:
+                if n <= len(occurrences):
+                    dates.append(date(year, month, occurrences[n - 1]))
     return dates
 
 
@@ -76,7 +79,7 @@ RECURRING_EVENTS = [
         "event_name": "Brætspilsaften",
         "organizer": "Storm B Café",
         "ig_handle": "@stormbcafe",
-        "location": "Storm B Café, Blågårdsgade 28, 2200 København N",
+        "location": "Storm B Café",
         "url": "https://www.instagram.com/p/DTfLNhGl5MA/",
         "start_time": "16:00",
         "end_time": None,
@@ -89,7 +92,7 @@ RECURRING_EVENTS = [
         "event_name": "Fry-Day",
         "organizer": "Flere Fugle",
         "ig_handle": "@flerefugle",
-        "location": "Flere Fugle, Frederikssundsvej 35, 2400 København NV",
+        "location": "Flere Fugle",
         "url": "https://www.instagram.com/p/DJHBK3Zi14I/",
         "start_time": "16:30",
         "end_time": None,
@@ -115,7 +118,7 @@ RECURRING_EVENTS = [
         "event_name": "Happy Hour at Storm B",
         "organizer": "Storm B Café",
         "ig_handle": "@stormbcafe",
-        "location": "Storm B Café, Blågårdsgade 28, 2200 København N",
+        "location": "Storm B Café",
         "url": "https://www.instagram.com/p/DQdQxHsiuds",
         "start_time": "16:00",
         "end_time": "19:00",
@@ -146,7 +149,7 @@ RECURRING_EVENTS = [
         "event_name": "Taca Copenhagen Social Run for Men",
         "organizer": "Taca Copenhagen",
         "ig_handle": "@tacacopenhagen",
-        "location": "Engsvinget 55, 2400 København NV",
+        "location": "Engsvinget 55",
         "url": "https://www.instagram.com/tacacopenhagen/",
         "start_time": "18:00",
         "end_time": None,
@@ -159,7 +162,7 @@ RECURRING_EVENTS = [
         "event_name": "Tekno Supperclub",
         "organizer": "Tekno Eatery",
         "ig_handle": "@teknoeatery",
-        "location": "Tekno Eatery, Rentemestervej 62, 2400 København NV",
+        "location": "Tekno Eatery",
         "url": "https://teknoeatery.dk/#supper",
         "start_time": "17:30",
         "end_time": "20:30",
@@ -181,14 +184,44 @@ RECURRING_EVENTS = [
         # Friday (4)
     },
     {
+        "id": "makerspace_neighborsunday",
+        "event_name": "Neighbor Sunday",
+        "organizer": "MakerSpace NV",
+        "ig_handle": "@makerspacenv",
+        "location": "MakerSpace NV",
+        "url": "https://www.facebook.com/MakerSpacenv/",
+        "start_time": "12:00",
+        "end_time": "15:00",
+        "source": "makerspacenv",
+        "schedule": {"type": "weekly", "weekday": 6},
+        # Sunday (6)
+    },
+    {
+        "id": "tagensbo_middag",
+        "event_name": "Middag for alle",
+        "organizer": "Tagensbo Kirke",
+        "ig_handle": "@tagensbokirke",
+        "location": "Tagensbo Kirke",
+        "url": "https://www.tagensbo.dk/aktiviteter-i-kirken/middag-for-alle",
+        "start_time": "17:30",
+        "end_time": None,
+        "source": "tagensbo kirke",
+        "schedule": {
+            "type": "monthly_weekday",
+            "weekday": 4,  # Friday
+            "nth": -1,     # Last Friday of the month
+            "months": list(range(1, 13)),  # All year
+        },
+    },
+    {
         "id": "kbhtrup_flea",
         "event_name": "Københavnstrup Flea Market",
         "organizer": "Københavns Trup",
         "ig_handle": "@kobenhavnstrup",
         "location": "Københavnstrup",
         "url": "https://www.instagram.com/kobenhavnstrup/",
-        "start_time": None,
-        "end_time": None,
+        "start_time": "12:00",
+        "end_time": "16:00",
         "source": "kobenhavnstrup",
         "schedule": {
             "type": "monthly_weekday",
@@ -277,6 +310,11 @@ def generate_recurring_events(months_ahead: int = 6) -> list[dict]:
                 "ig_handle": rec.get("ig_handle", ""),
                 "description": f"Recurring event: {rec['event_name']}",
                 "recurring": True,
+                "tag": classify_event(
+                    rec["event_name"],
+                    f"Recurring event: {rec['event_name']}",
+                    rec.get("organizer", ""),
+                ),
             }
             all_events.append(ev)
 

@@ -28,6 +28,8 @@ import requests
 # Add parent dir to path for shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from dedup import load_source_mapping, find_duplicate, load_fb_to_ig_map, _extract_fb_id
+from auto_tag import classify_event, is_not_event, should_skip_entirely, is_excluded_location
+from hours_db import push_to_hours_db
 
 # -------------------- CONFIG --------------------
 SLUG = "FACEBOOK"
@@ -383,6 +385,147 @@ def fetch_event_name_from_page(event_url: str) -> str | None:
     return None
 
 
+def is_multi_day_event(text: str) -> bool:
+    """
+    Detect if card text indicates a multi-day event.
+    Facebook shows multi-day events like:
+      "FRI, MAR 27 AT 8 AM – SUN, MAR 29 AT 3 PM"
+      "MAR 27 – MAR 29"
+    """
+    # Pattern: two dates separated by – or -
+    date_pat = r"(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?\s+\d{1,2}"
+    multi = re.search(
+        date_pat + r".*?[–\-]\s*(?:(?:MON|TUE|WED|THU|FRI|SAT|SUN)[A-Z]*,?\s+)?" + date_pat,
+        text, re.IGNORECASE,
+    )
+    return bool(multi)
+
+
+def fetch_event_page_text(event_url: str) -> str | None:
+    """
+    Visit an individual Facebook event page and extract the full visible text.
+    Used for multi-day events to get the description with per-day schedules.
+    """
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context_opts = {
+                "user_agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                "viewport": {"width": 1280, "height": 900},
+                "locale": "en-US",
+            }
+            if os.path.exists(FB_COOKIES_FILE):
+                context_opts["storage_state"] = FB_COOKIES_FILE
+
+            context = browser.new_context(**context_opts)
+            page = context.new_page()
+            page.goto(event_url, wait_until="domcontentloaded", timeout=15000)
+            time.sleep(3)
+
+            # Dismiss popups
+            for selector in [
+                'div[aria-label="Close"]',
+                'button:has-text("Decline optional cookies")',
+                'button:has-text("Not now")',
+            ]:
+                try:
+                    el = page.query_selector(selector)
+                    if el:
+                        el.click()
+                        time.sleep(0.3)
+                except Exception:
+                    pass
+
+            # Try clicking "See more" to expand the description
+            try:
+                see_more = page.query_selector('div[role="button"]:has-text("See more")')
+                if see_more:
+                    see_more.click()
+                    time.sleep(0.5)
+            except Exception:
+                pass
+
+            page_text = page.evaluate("() => document.body.innerText") or ""
+            browser.close()
+            return page_text[:8000] if page_text.strip() else None
+    except Exception as e:
+        if DEBUG:
+            log(f"  Could not fetch event page text: {e}")
+    return None
+
+
+def parse_multi_day_with_gemini(client, page_text: str, event_url: str,
+                                page_name: str) -> list[dict]:
+    """
+    Use Gemini to parse a multi-day Facebook event page into per-day entries.
+    Returns a list of event dicts, one per day.
+    """
+    prompt = f"""This is a multi-day Facebook event from "{page_name}".
+
+Full page text:
+{page_text[:5000]}
+
+Your task:
+1. This event spans MULTIPLE days. Create a SEPARATE entry for EACH day.
+2. For each day, extract the specific start_time and end_time if mentioned
+   in the description or schedule.
+3. Include the overall event description.
+
+Respond ONLY with valid JSON:
+
+{{
+  "events": [
+    {{
+      "event_name": "Name of the event",
+      "organizer": "Who is organizing (use '{page_name}' if unclear)",
+      "event_date": "YYYY-MM-DD",
+      "start_time": "HH:MM (24h format)" or null,
+      "end_time": "HH:MM (24h format)" or null,
+      "location": "Venue name only (no street address, postal code, or city)" or null,
+      "description": "Summary of what happens on this specific day, or general description"
+    }}
+  ]
+}}
+
+Rules:
+- The current date is {datetime.now().strftime('%Y-%m-%d')}.
+- Create one entry per day the event runs.
+- If per-day times are listed in the description, use those specific times for each day.
+- If the description does NOT mention specific times for each day, set start_time and end_time to null.
+  Do NOT invent times or use the overall event date-range start/end as individual day times.
+- NEVER use a venue/location name as the event_name.
+- If NO events are found, return {{"events": []}}
+- Respond ONLY with the JSON, no extra text."""
+
+    try:
+        from google import genai
+        from google.genai import types
+
+        gemini_limiter.wait()
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[prompt],
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                max_output_tokens=4000,
+            ),
+        )
+
+        result_text = response.text.strip()
+        if result_text.startswith("```"):
+            result_text = result_text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        result = json.loads(result_text)
+        return result.get("events", [])
+    except Exception as e:
+        log(f"  Gemini multi-day parse failed: {e}")
+        return []
+
+
 def fetch_recurring_dates(event_url: str) -> list[dict] | None:
     """
     Visit a Facebook event page and check if it's a recurring event.
@@ -528,7 +671,7 @@ Respond ONLY with valid JSON:
       "event_date": "YYYY-MM-DD",
       "start_time": "HH:MM (24h format)" or null,
       "end_time": "HH:MM (24h format)" or null,
-      "location": "Where it takes place" or null,
+      "location": "Venue/place NAME only (e.g. 'Storm B Café', 'Flere Fugle'), do NOT include street address, postal code, or city" or null,
       "description": "One-sentence summary"
     }}
   ]
@@ -536,6 +679,7 @@ Respond ONLY with valid JSON:
 
 Rules:
 - The current date is {datetime.now().strftime('%Y-%m-%d')}. If no year is mentioned, assume the next upcoming occurrence.
+- NEVER use a venue/location name as the event_name. The event_name should be the actual name of the event (e.g. "Sunday Deep" not "Rört").
 - If NO events are found, return {{"events": []}}
 - Respond ONLY with the JSON, no extra text."""
 
@@ -658,8 +802,8 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
         data = r.json()
         for page in data.get("results", []):
             props = page.get("properties", {})
-            url_val = props.get("URL", {}).get("url", "")
-            name_parts = props.get("Name", {}).get("title", [])
+            url_val = props.get("Event Link", {}).get("url", "")
+            name_parts = props.get("Event Name", {}).get("title", [])
             name = name_parts[0]["text"]["content"] if name_parts else ""
             date_obj = props.get("Start Date", {}).get("date")
             start_date = date_obj["start"] if date_obj else ""
@@ -690,10 +834,10 @@ def build_notion_props(ev: dict) -> dict:
     props = {}
 
     name = ev.get("event_name") or "Untitled Event"
-    props["Name"] = {"title": [{"text": {"content": name[:2000]}}]}
+    props["Event Name"] = {"title": [{"text": {"content": name[:2000]}}]}
 
     if ev.get("url"):
-        props["URL"] = {"url": ev["url"]}
+        props["Event Link"] = {"url": ev["url"]}
 
     if ev.get("start_date"):
         props["Start Date"] = {"date": {"start": ev["start_date"]}}
@@ -749,6 +893,10 @@ def build_notion_props(ev: dict) -> dict:
         props["To tag"] = {
             "rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]
         }
+
+    # Tag (select) — auto-classified event category
+    if ev.get("tag"):
+        props["Tags"] = {"select": {"name": ev["tag"]}}
 
     return props
 
@@ -874,13 +1022,18 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                         break
                 break
 
-            # If title is still the default, try fetching from the event page
-            if title == "Facebook Event" and event_url and event_url != page_url:
+            # If title is still the default or looks like the venue name,
+            # try fetching the real event name from the event page
+            title_is_bad = (
+                title == "Facebook Event"
+                or title.lower().strip() == page_name.lower().strip()
+                or title.lower().strip() in (location or "").lower()
+            )
+            if title_is_bad and event_url and event_url != page_url:
                 fetched_name = fetch_event_name_from_page(event_url)
                 if fetched_name:
                     title = fetched_name[:200]
-                    if DEBUG:
-                        log(f"  Fetched event name from page: {title}")
+                    log(f"  Fetched event name from page: {title}")
 
             if fallback:
                 parsed_events = [{
@@ -892,6 +1045,20 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                     "location": location,
                     "description": text[:200],
                 }]
+
+            # ── Check for multi-day event: visit event page for per-day details ──
+            if (is_multi_day_event(text)
+                    and client
+                    and event_url and event_url != page_url):
+                log(f"  🗓️  Multi-day event detected — fetching event page for details...")
+                page_text = fetch_event_page_text(event_url)
+                if page_text:
+                    multi_events = parse_multi_day_with_gemini(
+                        client, page_text, event_url, page_name
+                    )
+                    if multi_events:
+                        log(f"  🗓️  Parsed {len(multi_events)} day(s) from multi-day event")
+                        parsed_events = multi_events
 
             # ── Check for recurring event: visit event page to find all dates ──
             # Only do this if the listing page didn't already give us event_time_id links
@@ -929,12 +1096,46 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                 except ValueError:
                     pass
 
+            # Skip non-events entirely (deadlines, etc.)
+            if should_skip_entirely(event_data.get("event_name", ""), event_data.get("description", "")):
+                log(f"  Skipping non-event: {event_data.get('event_name')}")
+                continue
+
+            # Route hours/closure announcements to separate DB
+            if is_not_event(event_data.get("event_name", "")):
+                push_to_hours_db({
+                    "event_name": event_data.get("event_name"),
+                    "source": page_name,
+                    "location": event_data.get("location"),
+                    "description": event_data.get("description"),
+                    "url": event_url,
+                    "source_type": "Facebook",
+                    "ig_handle": fb_to_ig.get(_extract_fb_id(page_url).lower()),
+                    "date": date.today().isoformat(),
+                }, log_fn=log)
+                continue
+
+            # Skip retreats from Rört — they're not in Nordvest
+            if page_name.lower() in ("rortcph", "rort copenhagen"):
+                ev_text = f"{event_data.get('event_name', '')} {event_data.get('description', '')}".lower()
+                if "retreat" in ev_text or "retræte" in ev_text:
+                    log(f"  Skipping Rört retreat: {event_data.get('event_name')}")
+                    continue
+
             # Use event_time_url if available (recurring event), otherwise base event_url
             this_event_url = event_data.pop("_event_time_url", None) or event_url
 
             # Use the same extraction logic as load_fb_to_ig_map for consistent keys
             fb_key = _extract_fb_id(page_url).lower()
             ig_handle = fb_to_ig.get(fb_key) or fb_to_ig.get(page_name.lower())
+
+            # Default locations for FB pages where venue = page itself
+            _FB_DEFAULT_LOCATIONS = {
+                "rabenssaloner": "Rabens Saloner",
+                "cafegazounv": "Cafe Gazou",
+                "lygtenstation": "Lygten Station",
+            }
+            location = _FB_DEFAULT_LOCATIONS.get(page_name.lower()) or event_data.get("location")
 
             ev = {
                 "event_name": event_data.get("event_name"),
@@ -943,13 +1144,23 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                 "end_date": event_date_str,
                 "start_time_disp": to_12h(event_data.get("start_time")),
                 "end_time_disp": to_12h(event_data.get("end_time")),
-                "location": event_data.get("location"),
+                "location": location,
                 "description": event_data.get("description"),
                 "source_type": "Facebook",
                 "source": page_name,
                 "url": this_event_url,
                 "ig_handle": ig_handle,
+                "tag": classify_event(
+                    event_data.get("event_name", ""),
+                    event_data.get("description", ""),
+                    event_data.get("organizer", ""),
+                ),
             }
+
+            # Skip events at excluded locations (not in Nordvest)
+            if is_excluded_location(ev.get("location", "")):
+                log(f"  Skipping excluded location: {ev.get('event_name')} @ {ev.get('location')}")
+                continue
 
             dupe = find_duplicate(
                 ev.get("event_name", ""),

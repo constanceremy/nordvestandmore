@@ -49,7 +49,7 @@ def fetch_all_entries() -> list[dict]:
         data = r.json()
         for page in data.get("results", []):
             props = page.get("properties", {})
-            name_parts = props.get("Name", {}).get("title", [])
+            name_parts = props.get("Event Name", {}).get("title", [])
             name = name_parts[0]["text"]["content"] if name_parts else ""
             date_obj = props.get("Start Date", {}).get("date")
             start_date = date_obj["start"] if date_obj else ""

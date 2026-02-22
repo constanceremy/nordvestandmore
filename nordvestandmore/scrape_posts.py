@@ -39,6 +39,8 @@ logging.getLogger("instaloader").setLevel(logging.ERROR)
 # Add parent dir for shared modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dedup import load_source_mapping, find_duplicate
+from auto_tag import classify_event, is_not_event, should_skip_entirely, is_excluded_location
+from hours_db import push_to_hours_db
 
 # -------------------- CONFIG --------------------
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
@@ -174,7 +176,7 @@ Extract ALL events from this post. Return JSON:
       "event_date": "YYYY-MM-DD",
       "start_time": "HH:MM" or null,
       "end_time": "HH:MM" or null,
-      "location": "..." or null,
+      "location": "Venue/place NAME only (e.g. 'Storm B Café', 'Flere Fugle'), do NOT include street address, postal code, or city" or null,
       "description": "short summary, max 200 chars",
       "organizer": "who is hosting" or null,
       "tagged_accounts": ["@handle1", "@handle2"]
@@ -282,8 +284,8 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
         data = r.json()
         for page in data.get("results", []):
             props = page.get("properties", {})
-            url_val = props.get("URL", {}).get("url", "")
-            name_parts = props.get("Name", {}).get("title", [])
+            url_val = props.get("Event Link", {}).get("url", "")
+            name_parts = props.get("Event Name", {}).get("title", [])
             name = name_parts[0]["text"]["content"] if name_parts else ""
             date_obj = props.get("Start Date", {}).get("date")
             start_date = date_obj["start"] if date_obj else ""
@@ -311,10 +313,10 @@ def build_notion_props(ev: dict) -> dict:
     props = {}
 
     name = ev.get("event_name") or "Untitled Event"
-    props["Name"] = {"title": [{"text": {"content": name[:2000]}}]}
+    props["Event Name"] = {"title": [{"text": {"content": name[:2000]}}]}
 
     if ev.get("url"):
-        props["URL"] = {"url": ev["url"]}
+        props["Event Link"] = {"url": ev["url"]}
     if ev.get("start_date"):
         props["Start Date"] = {"date": {"start": ev["start_date"]}}
     if ev.get("end_date"):
@@ -339,6 +341,10 @@ def build_notion_props(ev: dict) -> dict:
         props["Instagramhandle"] = {"rich_text": [{"text": {"content": ev["ig_handle"][:2000]}}]}
     if ev.get("to_tag"):
         props["To tag"] = {"rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]}
+
+    # Tag (select) — auto-classified event category
+    if ev.get("tag"):
+        props["Tags"] = {"select": {"name": ev["tag"]}}
 
     return props
 
@@ -422,6 +428,25 @@ def process_post(L, client, shortcode: str, post_url: str,
         all_tags.discard(account.lower())
         to_tag = ", ".join(f"@{t}" for t in sorted(all_tags)) if all_tags else None
 
+        # Skip non-events entirely (deadlines, etc.)
+        if should_skip_entirely(event_data.get("event_name", ""), event_data.get("description", "")):
+            log(f"  Skipping non-event: {event_data.get('event_name')}")
+            continue
+
+        # Route hours/closure announcements to separate DB
+        if is_not_event(event_data.get("event_name", "")):
+            push_to_hours_db({
+                "event_name": event_data.get("event_name"),
+                "source": f"@{account}",
+                "location": event_data.get("location"),
+                "description": event_data.get("description"),
+                "url": post_url,
+                "source_type": "Instagram",
+                "ig_handle": f"@{account}",
+                "date": post.date_utc.date().isoformat(),
+            }, log_fn=log)
+            continue
+
         ev = {
             "event_name": event_data.get("event_name"),
             "organizer": event_data.get("organizer"),
@@ -436,7 +461,17 @@ def process_post(L, client, shortcode: str, post_url: str,
             "url": post_url,
             "ig_handle": f"@{account}",
             "to_tag": to_tag,
+            "tag": classify_event(
+                event_data.get("event_name", ""),
+                event_data.get("description", ""),
+                event_data.get("organizer", ""),
+            ),
         }
+
+        # Skip events at excluded locations (not in Nordvest)
+        if is_excluded_location(ev.get("location", "")):
+            log(f"  Skipping excluded location: {ev.get('event_name')} @ {ev.get('location')}")
+            continue
 
         # Check for cross-platform duplicate
         dupe = find_duplicate(

@@ -18,10 +18,12 @@ import csv
 import importlib.util
 import os
 import random
+import requests
 import sys
 import tempfile
 import shutil
 import time
+from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -116,6 +118,96 @@ def prepare_fb_url(url: str, fb_filter: str = "", fb_exclude: str = "") -> dict:
 def add_stats(totals: dict, stats: dict):
     for k in totals:
         totals[k] += stats.get(k, 0)
+
+
+# ────────────────── Post-scrape dedup ──────────────────
+
+def _post_scrape_dedup() -> int:
+    """
+    Re-fetch all Notion entries and delete exact duplicates
+    (same name + date + URL + source). Keeps the oldest entry.
+    Returns number of duplicates deleted.
+    """
+    NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
+    NOTION_DB = os.environ.get("NOTION_DATABASE_ID", "")
+    NOTION_API = "https://api.notion.com/v1"
+    HEADERS = {
+        "Authorization": f"Bearer {NOTION_TOKEN}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+    }
+
+    # Fetch all entries
+    entries = []
+    payload: dict = {"page_size": 100}
+    pages_fetched = 0
+    while True:
+        r = requests.post(
+            f"{NOTION_API}/databases/{NOTION_DB}/query",
+            headers=HEADERS, json=payload, timeout=60,
+        )
+        r.raise_for_status()
+        data = r.json()
+        for page in data.get("results", []):
+            props = page.get("properties", {})
+            name_parts = props.get("Event Name", {}).get("title", [])
+            name = name_parts[0]["text"]["content"] if name_parts else ""
+            date_obj = props.get("Start Date", {}).get("date")
+            start_date = date_obj["start"] if date_obj else ""
+            url_val = props.get("Event Link", {}).get("url", "") or ""
+            source_parts = props.get("Source", {}).get("rich_text", [])
+            source = source_parts[0]["text"]["content"] if source_parts else ""
+            entries.append({
+                "page_id": page["id"],
+                "name": name, "start_date": start_date,
+                "url": url_val, "source": source,
+                "created_time": page.get("created_time", ""),
+            })
+        pages_fetched += 1
+        if not data.get("has_more"):
+            break
+        payload["start_cursor"] = data.get("next_cursor")
+        if pages_fetched >= 200:
+            break
+
+    # Group by (name, date, url, source) — find exact dupes
+    groups: dict[tuple, list] = defaultdict(list)
+    for entry in entries:
+        key = (
+            entry["name"].strip().lower(),
+            entry["start_date"],
+            entry["url"].strip().rstrip("/"),
+            entry["source"].strip().lower(),
+        )
+        if key[0] and key[1]:
+            groups[key].append(entry)
+
+    to_delete = []
+    for key, group in groups.items():
+        if len(group) <= 1:
+            continue
+        group.sort(key=lambda e: e["created_time"])
+        to_delete.extend(group[1:])  # keep oldest
+
+    if not to_delete:
+        print("  ✅ No exact duplicates found")
+        return 0
+
+    print(f"  🗑️  Found {len(to_delete)} exact duplicate(s) — deleting...")
+    deleted = 0
+    for d in to_delete:
+        resp = requests.patch(
+            f"{NOTION_API}/pages/{d['page_id']}",
+            headers=HEADERS,
+            json={"archived": True},
+            timeout=30,
+        )
+        if resp.status_code < 400:
+            deleted += 1
+        time.sleep(0.3)
+
+    print(f"  ✅ Removed {deleted}/{len(to_delete)} duplicate(s)")
+    return deleted
 
 
 # ────────────────── Main ──────────────────
@@ -522,6 +614,15 @@ def main():
         if tmp_dir:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
+    # ── Post-scrape dedup: remove exact duplicates ──
+    print()
+    print("═" * 50)
+    print("  🧹 Post-scrape dedup — checking for exact duplicates...")
+    print("═" * 50)
+    dedup_deleted = _post_scrape_dedup()
+    if dedup_deleted:
+        totals["dedup_deleted"] = dedup_deleted
+
     print()
     print("═" * 50)
     print(f"  ✅ All done!")
@@ -529,6 +630,8 @@ def main():
     print(f"     Created:      {totals['created']}")
     print(f"     Updated:      {totals['updated']}")
     print(f"     Skipped:      {totals['skipped']}")
+    if totals.get("dedup_deleted"):
+        print(f"     🧹 Deduped:    {totals['dedup_deleted']}")
     if totals["flagged_dupes"]:
         print(f"     ⚠️  Duplicates: {totals['flagged_dupes']}")
     if ig_retry_list and not ig_mod._logged_in:

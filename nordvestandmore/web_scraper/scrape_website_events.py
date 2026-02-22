@@ -29,6 +29,8 @@ from bs4 import BeautifulSoup
 # Add parent dir to path for dedup import
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dedup import load_source_mapping, find_duplicate, similarity
+from auto_tag import classify_event, is_not_event, should_skip_entirely, is_excluded_location
+from hours_db import push_to_hours_db
 
 # ────────────────── Config ──────────────────
 
@@ -921,10 +923,8 @@ def parse_thoravej29(html: str, page_url: str) -> list[dict]:
                             pass
 
                     # Build location
-                    location = "Thoravej 29, 2400 København NV"
                     sub_venue = ev_data.get("location")
-                    if sub_venue:
-                        location = f"{sub_venue}, Thoravej 29, 2400 København NV"
+                    location = sub_venue if sub_venue else "Thoravej 29"
 
                     events.append({
                         "event_name": ev_data.get("event_name"),
@@ -955,10 +955,10 @@ def parse_thoravej29(html: str, page_url: str) -> list[dict]:
 
 # Map venue slugs (from ?location= links) to display names and addresses
 FLEREFUGLE_VENUES = {
-    "flere-fugle": ("Flere Fugle", "Flere Fugle, Gammel Jernbanevej 7, 2500 Valby"),
+    "flere-fugle": ("Flere Fugle", "Flere Fugle"),
     "lille-fugl": ("Lille Fugl", "Lille Fugl"),
-    "fovl": ("Fovl NV", "Fovl, Rentemestervej 64, 2400 København NV"),
-    "flok": ("Flok Kantine", "Flok Kantine, Lygten 39, 2400 København NV"),
+    "fovl": ("Fovl NV", "Fovl NV"),
+    "flok": ("Flok Kantine", "Flok Kantine"),
     "bageri-butik": ("Flere Fugle Bageri", "Flere Fugle Bageri & Butik"),
 }
 
@@ -1087,7 +1087,7 @@ def parse_flerefugle(html: str, page_url: str) -> list[dict]:
 
 # ────────────────── Just Sauna parser (Yogo API) ──────────────────
 
-JUSTSAUNA_LOCATION = "Urban13, Bispeengen 20, 2000 Frederiksberg"
+JUSTSAUNA_LOCATION = "Urban 13"
 YOGO_CLIENT_ID = "814"
 YOGO_API_EVENTS = "https://api.yogo.dk/events"
 
@@ -1194,7 +1194,7 @@ def parse_justsauna(json_text: str, page_url: str) -> list[dict]:
 # ────────────────── Sauna 85 parser (Yogo API) ──────────────────
 
 SAUNA85_CLIENT_ID = "664"
-SAUNA85_LOCATION = "Rentemestervej 64, 2400 København NV"
+SAUNA85_LOCATION = "Sauna 85"
 
 
 def fetch_sauna85(_url: str) -> str:
@@ -1413,7 +1413,7 @@ def parse_demokratigarage(html: str, page_url: str) -> list[dict]:
             "event_date": event_date_str,
             "start_time": start_time,
             "end_time": end_time,
-            "location": "Rentemestervej 57, 2400 København NV",
+            "location": "Flere Fugle" if is_flere_fugle else "Demokratigarage",
             "organizer": "Flere Fugle" if is_flere_fugle else "Demokratigarage",
             "description": description[:200] if description else None,
             "url": event_url,
@@ -2057,7 +2057,7 @@ def parse_norhouse(html: str, page_url: str) -> list[dict]:
                     "event_date": event_date_str,
                     "start_time": ev_data.get("start_time"),
                     "end_time": ev_data.get("end_time"),
-                    "location": "NOR: Nordic Health House, Hejrevej 30, 2400 København NV",
+                    "location": "Nordic Health House",
                     "organizer": "Nordic Health House",
                     "description": ev_data.get("description"),
                     "url": detail_url,
@@ -2236,7 +2236,7 @@ def parse_kk_bibliotek(html: str, page_url: str) -> list[dict]:
                 "event_date": ev_date,
                 "start_time": ev_start,
                 "end_time": ev_end,
-                "location": f"{location}, {_KK_LOCATION_ADDRESSES.get(location, '')}".rstrip(", "),
+                "location": "Biblioteket Rentemestervej",
                 "organizer": location,
                 "description": full_description,
                 "url": event_url,
@@ -2600,7 +2600,7 @@ def _parse_kk_events_json(html: str, page_url: str) -> list[dict]:
 
 _DANSEKAPELLET_EXCLUDE_TITLES = {"legestuen"}  # always skip by name
 _DANSEKAPELLET_EXCLUDE_CATEGORIES = {"bevægelse"}  # skip class/movement categories
-_DANSEKAPELLET_ADDR = "Dansekapellet, Bispebjerg Torv 1, 2400 København NV"
+_DANSEKAPELLET_ADDR = "Dansekapellet"
 
 
 def _dansekapellet_gemini_dates(
@@ -2717,7 +2717,7 @@ def parse_dansekapellet(html: str, page_url: str) -> list[dict]:
 
 # ────────────────── Lygten Station (kulturogfritidn.kk.dk) ──────────────────
 
-_LYGTENSTATION_ADDR = "Lygten Station, Lygten 2, 2400 København NV"
+_LYGTENSTATION_ADDR = "Lygten Station"
 
 
 def fetch_lygtenstation(url: str) -> str:
@@ -2866,7 +2866,7 @@ def parse_tagensbo(html: str, page_url: str) -> list[dict]:
 _KAPERNAUMSKIRKEN_WIDGET = (
     "https://widget.churchdesk.com/da/w/444/event/DIqjahiE56tG/1/1393468"
 )
-_KAPERNAUMSKIRKEN_ADDR = "Kapernaumskirken, Frederikssundsvej 45, 2400 København NV"
+_KAPERNAUMSKIRKEN_ADDR = "Kapernaumskirken"
 
 
 def fetch_kapernaumskirken(url: str) -> str:
@@ -3102,8 +3102,8 @@ def notion_existing_entries() -> tuple[dict, list]:
 
         for page in data.get("results", []):
             props = page.get("properties", {})
-            url_val = (props.get("URL") or {}).get("url")
-            name_parts = (props.get("Name") or {}).get("title", [])
+            url_val = (props.get("Event Link") or {}).get("url")
+            name_parts = (props.get("Event Name") or {}).get("title", [])
             name = name_parts[0]["text"]["content"] if name_parts else ""
             source_parts = (props.get("Source") or {}).get("rich_text", [])
             source = source_parts[0]["text"]["content"] if source_parts else ""
@@ -3146,10 +3146,10 @@ def build_notion_props(ev: dict) -> dict:
     props = {}
 
     name = ev.get("event_name") or "Untitled Event"
-    props["Name"] = {"title": [{"text": {"content": name[:2000]}}]}
+    props["Event Name"] = {"title": [{"text": {"content": name[:2000]}}]}
 
     if ev.get("url"):
-        props["URL"] = {"url": ev["url"]}
+        props["Event Link"] = {"url": ev["url"]}
 
     if ev.get("start_date"):
         props["Start Date"] = {"date": {"start": ev["start_date"]}}
@@ -3205,6 +3205,10 @@ def build_notion_props(ev: dict) -> dict:
 
     if ev.get("recurring"):
         props["Recurring"] = {"checkbox": True}
+
+    # Tag (select) — auto-classified event category
+    if ev.get("tag"):
+        props["Tags"] = {"select": {"name": ev["tag"]}}
 
     return props
 
@@ -3335,6 +3339,25 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
 
                 # Fall through to normal event creation below
 
+        # Skip non-events entirely (deadlines, etc.)
+        if should_skip_entirely(event_data.get("event_name", ""), event_data.get("description", "")):
+            log(f"  Skipping non-event: {event_data.get('event_name')}")
+            continue
+
+        # Route hours/closure announcements to separate DB
+        if is_not_event(event_data.get("event_name", "")):
+            push_to_hours_db({
+                "event_name": event_data.get("event_name"),
+                "source": site_key,
+                "location": event_data.get("location"),
+                "description": event_data.get("description"),
+                "url": event_url,
+                "source_type": "Website",
+                "ig_handle": f"@{ig_handle}" if ig_handle else None,
+                "date": date.today().isoformat(),
+            }, log_fn=log)
+            continue
+
         ev = {
             "event_name": event_data.get("event_name"),
             "organizer": event_data.get("organizer"),
@@ -3349,7 +3372,17 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
             "url": event_url,
             "ig_handle": f"@{ig_handle}" if ig_handle else None,
             "to_tag": "@demokratigarage" if event_data.get("_flag_duplicate") else None,
+            "tag": classify_event(
+                event_data.get("event_name", ""),
+                event_data.get("description", ""),
+                event_data.get("organizer", ""),
+            ),
         }
+
+        # Skip events at excluded locations (not in Nordvest)
+        if is_excluded_location(ev.get("location", "")):
+            log(f"  Skipping excluded location: {ev.get('event_name')} @ {ev.get('location')}")
+            continue
 
         # If flagged from cross-post fallback, mark as possible duplicate
         if event_data.get("_flag_duplicate"):

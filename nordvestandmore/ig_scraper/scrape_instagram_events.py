@@ -37,6 +37,8 @@ import requests
 # Add parent dir to path for shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from dedup import load_source_mapping, find_duplicate
+from auto_tag import classify_event, is_not_event, should_skip_entirely, is_excluded_location
+from hours_db import push_to_hours_db
 
 # -------------------- CONFIG --------------------
 SLUG = "INSTAGRAM"
@@ -316,7 +318,7 @@ Respond ONLY with valid JSON — an array of events:
       "event_date": "YYYY-MM-DD",
       "start_time": "HH:MM (24h format)" or null,
       "end_time": "HH:MM (24h format)" or null,
-      "location": "Where it takes place" or null,
+      "location": "Venue/place NAME only (e.g. 'Storm B Café', 'Flere Fugle'), do NOT include street address, postal code, or city" or null,
       "description": "One-sentence summary of this specific event",
       "tagged_accounts": ["@handle1", "@handle2"]
     }}
@@ -405,8 +407,8 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
         data = r.json()
         for page in data.get("results", []):
             props = page.get("properties", {})
-            url_val = props.get("URL", {}).get("url", "")
-            name_parts = props.get("Name", {}).get("title", [])
+            url_val = props.get("Event Link", {}).get("url", "")
+            name_parts = props.get("Event Name", {}).get("title", [])
             name = name_parts[0]["text"]["content"] if name_parts else ""
             date_obj = props.get("Start Date", {}).get("date")
             start_date = date_obj["start"] if date_obj else ""
@@ -439,11 +441,11 @@ def build_notion_props(ev: dict) -> dict:
 
     # Name (title)
     name = ev.get("event_name") or "Untitled Event"
-    props["Name"] = {"title": [{"text": {"content": name[:2000]}}]}
+    props["Event Name"] = {"title": [{"text": {"content": name[:2000]}}]}
 
     # URL — link to source post
     if ev.get("url"):
-        props["URL"] = {"url": ev["url"]}
+        props["Event Link"] = {"url": ev["url"]}
 
     # Start Date
     if ev.get("start_date"):
@@ -508,6 +510,10 @@ def build_notion_props(ev: dict) -> dict:
         props["To tag"] = {
             "rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]
         }
+
+    # Tag (select) — auto-classified event category
+    if ev.get("tag"):
+        props["Tags"] = {"select": {"name": ev["tag"]}}
 
     return props
 
@@ -606,6 +612,32 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 except ValueError:
                     pass
 
+            # Skip non-events entirely (deadlines, etc.)
+            if should_skip_entirely(event_data.get("event_name", ""), event_data.get("description", "")):
+                log(f"  Skipping non-event: {event_data.get('event_name')}")
+                continue
+
+            # Route hours/closure announcements to separate DB
+            if is_not_event(event_data.get("event_name", "")):
+                push_to_hours_db({
+                    "event_name": event_data.get("event_name"),
+                    "source": f"@{account}",
+                    "location": event_data.get("location"),
+                    "description": event_data.get("description"),
+                    "url": post_url,
+                    "source_type": "Instagram",
+                    "ig_handle": f"@{account}",
+                    "date": post.date_utc.date().isoformat(),
+                }, log_fn=log)
+                continue
+
+            # Skip retreats from Rört — they're not in Nordvest
+            if account.lower() in ("rort.copenhagen",):
+                ev_text = f"{event_data.get('event_name', '')} {event_data.get('description', '')}".lower()
+                if "retreat" in ev_text or "retræte" in ev_text:
+                    log(f"  Skipping Rört retreat: {event_data.get('event_name')}")
+                    continue
+
             # Collect @mentions: from Gemini + from caption directly
             gemini_tags = event_data.get("tagged_accounts") or []
             caption_tags = re.findall(r"@([\w.]+)", caption)
@@ -641,6 +673,22 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                         ig_handle_val = brand_handle
                         break
 
+            # Default location for accounts whose events are always at their own venue
+            _DEFAULT_LOCATIONS = {
+                "gamma_nv": "Gamma NV",
+                "urbancampercph": "Urban Camper",
+                "dortheasbar": "Dorthea's Bar",
+                "heatharmonydk": "Heat Harmony",
+                "haut_scene": "Haut Scene",
+                "flok_kantine": "Flok",
+                "rabens_saloner": "Rabens Saloner",
+                "kima_forfanden": "Kima",
+                "cafe.gazou": "Cafe Gazou",
+                "lygtenstation": "Lygten Station",
+                "dansekapellet": "Dansekapellet",
+            }
+            location = _DEFAULT_LOCATIONS.get(account.lower()) or event_data.get("location")
+
             ev = {
                 "event_name": event_data.get("event_name"),
                 "organizer": organizer,
@@ -648,14 +696,24 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 "end_date": event_date_str,
                 "start_time_disp": to_12h(event_data.get("start_time")),
                 "end_time_disp": to_12h(event_data.get("end_time")),
-                "location": event_data.get("location"),
+                "location": location,
                 "description": event_data.get("description"),
                 "source_type": "Instagram",
                 "source": f"@{account}",
                 "url": post_url,
                 "ig_handle": ig_handle_val,
                 "to_tag": to_tag,
+                "tag": classify_event(
+                    event_data.get("event_name", ""),
+                    event_data.get("description", ""),
+                    organizer or "",
+                ),
             }
+
+            # Skip events at excluded locations (not in Nordvest)
+            if is_excluded_location(ev.get("location", "")):
+                log(f"  Skipping excluded location: {ev.get('event_name')} @ {ev.get('location')}")
+                continue
 
             # Check for cross-platform duplicate
             dupe = find_duplicate(

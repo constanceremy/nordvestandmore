@@ -1,0 +1,80 @@
+---
+description: Event auto-tagging rules for the NV&More event scraper
+globs:
+  - nordvestandmore/auto_tag.py
+  - nordvestandmore/**/scrape_*.py
+  - nordvestandmore/recurring_events.py
+  - nordvestandmore/run_scraper.py
+alwaysApply: false
+---
+
+# Event Auto-Tagging System
+
+## Overview
+
+Events scraped from Instagram, Facebook, websites, and recurring definitions are
+automatically classified into categories using the `auto_tag.py` module.
+The tag is stored in the Notion database's **"Tag"** property (type: `select`).
+
+## How It Works
+
+1. **`auto_tag.classify_event(event_name, description, organizer)`** is called
+   when building each event dict, BEFORE pushing to Notion.
+2. Classification uses **keyword/pattern matching** (no API calls, instant).
+3. Rules are ordered by **priority** — first match wins.
+4. Returns `None` if no rule matches (event stays untagged).
+
+## Current Tag Categories (priority order)
+
+| Tag | Examples |
+|-----|----------|
+| Book Club | Bogklub, Litteraturkreds, Sci-fi bogklub |
+| Church & Spiritual | Natkirke, Kirke events, Aftensang, Fællessang, Kor |
+| Sauna | Saunagus, Rört events, Uberört |
+| Quiz / Banko / Bingo | Music Quiz, Trivia, Banko, Bingo |
+| Games | Brætspil, Skak (chess) |
+| Comedy | Improv, Stand-up, Kaoskomplottet, material test shows |
+| Film | Roboclub screenings, CPH:DOX, film screenings |
+| Market | Flea market, Stock & Sample Sale, Rose Tuesday |
+| Workshop | Craft, courses, masterclass, drawing, painting, serigrafi |
+| Yoga & Mindfulness | Yoga, meditation, sound bath, breathwork, kirtan |
+| Sport & Run | Running clubs, workouts, fitness |
+| Community Dinner | Fællesspisning, Fry-Day, Peoples Kitchen, Supperclub |
+| Drinks & Bar | Happy Hour, cocktail events, beer tastings |
+| Music | Concerts, DJ sets, live music, jazz, punk, metal |
+| Dance & Performance | Dance shows, theater, koreografi |
+| Art & Exhibition | Fernisering, exhibitions, gallery events |
+| Kids & Family | Børn, baby, barselscafé, ungdomsgård |
+| Talk & Lecture | Foredrag, lectures, conferences, seminars |
+| Festival & Party | Festivals, sommerfest, parties |
+| Social Gathering | Neighbor Sunday, community meetups, social events |
+
+## Where Tags Are Applied
+
+- **`ig_scraper/scrape_instagram_events.py`** → `scrape_account()` builds ev dict with `tag`
+- **`fb_scraper/scrape_facebook_events.py`** → `scrape_page_entry()` builds ev dict with `tag`
+- **`web_scraper/scrape_website_events.py`** → `scrape_site()` builds ev dict with `tag`
+- **`recurring_events.py`** → `generate_recurring_events()` builds ev dict with `tag`
+- **`scrape_posts.py`** → `process_post()` builds ev dict with `tag`
+
+## Adding/Modifying Tags
+
+Edit `auto_tag.py` → `TAG_RULES` list:
+
+```python
+{
+    "tag": "Category Name",        # Must match Notion select option name
+    "keywords": ["keyword1", ...], # Substring match (lowercased)
+    "patterns": [r"\bREGEX\b"],    # Regex patterns (case-insensitive)
+}
+```
+
+- **Order matters**: more specific rules go BEFORE broader ones.
+- Test with `python auto_tag.py "Event Name" "description"`.
+- Run `python auto_tag.py` (no args) to see all test cases.
+
+## Notion Property
+
+- Property name: **Tag**
+- Property type: **select**
+- Options are auto-created by Notion when a new tag name is first used.
