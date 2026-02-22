@@ -6,6 +6,9 @@ Usage:
     python run_scraper.py all                          # scrape everything
     python run_scraper.py "Gamma" "RORT Copenhagen"    # just these two
     python run_scraper.py --list                        # show available names
+    python run_scraper.py all --from "Biblioteket Rentemestervej"  # resume from entity
+    python run_scraper.py all --from 11                # resume from entity #11
+    python run_scraper.py all --auto                   # non-interactive (for cron)
 
 Reads source_mapping.csv as the single source of truth.
 Loads .env once, sets up shared resources (Notion, Gemini, Instaloader)
@@ -60,7 +63,7 @@ def load_mapping() -> list[dict]:
 def resolve_selections(all_rows: list[dict], args: list[str]) -> list[dict]:
     """Match user arguments (case-insensitive, partial match) to rows."""
     if not args or args[0].lower() == "all":
-        return all_rows
+        return sorted(all_rows, key=lambda r: r["name"].lower())
 
     selected = []
     names_lower = {r["name"].lower(): r for r in all_rows}
@@ -125,22 +128,58 @@ def main():
 
     # ── --list mode ──
     if len(sys.argv) > 1 and sys.argv[1] == "--list":
-        print(f"{'Name':<40} {'IG':<30} {'FB':<5} {'Web'}")
-        print("─" * 110)
-        for r in all_rows:
+        print(f"{'#':<5} {'Name':<40} {'IG':<30} {'FB':<5} {'Web'}")
+        print("─" * 115)
+        for idx, r in enumerate(sorted(all_rows, key=lambda r: r["name"].lower()), 1):
             ig = r["instagram"] or "—"
             fb = "✓" if r["facebook"] else "—"
             web = "✓" if r["website"] else "—"
             filt = f" (filter: {r['fb_filter']})" if r["fb_filter"] else ""
             if r.get("fb_exclude"):
                 filt += f" (exclude: {r['fb_exclude']})"
-            print(f"{r['name']:<40} {ig:<30} {fb:<5} {web}{filt}")
+            print(f"{idx:<5} {r['name']:<40} {ig:<30} {fb:<5} {web}{filt}")
         print(f"\n{len(all_rows)} sources total")
         return
 
     # ── Resolve selection ──
     args = sys.argv[1:] if len(sys.argv) > 1 else ["all"]
+
+    # Handle --auto flag (non-interactive, for cron/scheduled runs)
+    auto_mode = "--auto" in args
+    if auto_mode:
+        args.remove("--auto")
+
+    # Handle --from flag (resume from a specific entity)
+    start_from = None
+    if "--from" in args:
+        from_idx = args.index("--from")
+        if from_idx + 1 < len(args):
+            start_from = args[from_idx + 1]
+            args = args[:from_idx] + args[from_idx + 2:]
+        else:
+            print("Error: --from requires a name or number")
+            return
+
     selected = resolve_selections(all_rows, args)
+
+    # Apply --from: skip entities before the specified one
+    if start_from and selected:
+        try:
+            skip_to = int(start_from) - 1  # 1-based → 0-based index
+            selected = selected[skip_to:]
+            print(f"⏩ Resuming from #{skip_to + 1}: {selected[0]['name']}")
+        except ValueError:
+            # Match by name (case-insensitive partial match)
+            found = False
+            for i, ent in enumerate(selected):
+                if start_from.lower() in ent["name"].lower():
+                    selected = selected[i:]
+                    print(f"⏩ Resuming from #{i + 1}: {selected[0]['name']}")
+                    found = True
+                    break
+            if not found:
+                print(f"Error: no entity matching '{start_from}' found")
+                return
 
     if not selected:
         print("No sources selected. Use --list to see available names.")
@@ -179,12 +218,15 @@ def main():
             print("  📘 Facebook: cookies found ✅")
         else:
             print("  📘 Facebook: no cookies found")
-            ans = input("     Open browser to log in to Facebook? [y/N] ").strip().lower()
-            if ans == "y":
-                fb_login_mod = import_module_from_file(
-                    "fb_login", str(ROOT / "fb_scraper" / "fb_login.py"),
-                )
-                fb_login_mod.main()
+            if auto_mode:
+                print("     ⏭️  Skipping FB login (auto mode)")
+            else:
+                ans = input("     Open browser to log in to Facebook? [y/N] ").strip().lower()
+                if ans == "y":
+                    fb_login_mod = import_module_from_file(
+                        "fb_login", str(ROOT / "fb_scraper" / "fb_login.py"),
+                    )
+                    fb_login_mod.main()
 
     # Instagram: no login upfront — scrape public posts first, retry with login at end
     ig_L = ig_client = None
@@ -202,6 +244,12 @@ def main():
         url = entry.get("url", "")
         if url:
             fb_existing[url] = entry.get("page_id")
+            # Also add compound keys for recurring event dedup (url##date##time)
+            sd = entry.get("start_date", "")
+            if sd:
+                fb_existing[f"{url}##{sd}##"] = entry.get("page_id")
+                # We don't have start_time in the entry, so we only index without it.
+                # The recurring dedup will fall back to this no-time key.
 
     source_mapping = ig_mod.load_source_mapping()
 
@@ -354,7 +402,7 @@ def main():
                     except Exception as e:
                         print(f"  📸 Login failed ({e})")
 
-                if not logged_in:
+                if not logged_in and not auto_mode:
                     pw = input("  📸 Enter IG password (or Enter to skip retry): ").strip()
                     if pw:
                         try:
@@ -364,6 +412,8 @@ def main():
                             print(f"  📸 Logged in ✅")
                         except Exception as e2:
                             print(f"  📸 Login failed ({e2}) — skipping retry")
+                elif not logged_in:
+                    print("  📸 Auto login failed — skipping retry (auto mode)")
             else:
                 print("  📸 No IG_USERNAME in .env — skipping retry")
 
@@ -430,27 +480,32 @@ def main():
                     dedup_key_no_time = f"{ev['url']}##{ev['start_date']}##"
                     page_id = fb_existing.get(dedup_key_no_time)
 
-                if page_id:
-                    resp = web_mod.notion_update(page_id, ev)
-                    if resp.status_code == 429:
-                        time.sleep(1.5)
+                try:
+                    if page_id:
                         resp = web_mod.notion_update(page_id, ev)
-                    rec_updated += 1
-                else:
-                    resp = web_mod.notion_create(ev)
-                    if resp.status_code == 429:
-                        time.sleep(1.5)
-                        resp = web_mod.notion_create(ev)
-                    if resp.status_code < 400:
-                        try:
-                            new_id = resp.json().get("id")
-                            if new_id:
-                                fb_existing[dedup_key] = new_id
-                        except Exception:
-                            pass
-                        rec_created += 1
+                        if resp.status_code == 429:
+                            time.sleep(1.5)
+                            resp = web_mod.notion_update(page_id, ev)
+                        rec_updated += 1
                     else:
-                        rec_skipped += 1
+                        resp = web_mod.notion_create(ev)
+                        if resp.status_code == 429:
+                            time.sleep(1.5)
+                            resp = web_mod.notion_create(ev)
+                        if resp.status_code < 400:
+                            try:
+                                new_id = resp.json().get("id")
+                                if new_id:
+                                    fb_existing[dedup_key] = new_id
+                            except Exception:
+                                pass
+                            rec_created += 1
+                        else:
+                            rec_skipped += 1
+                except Exception as e:
+                    print(f"     ⚠️ Notion error for {ev['event_name']} {ev['start_date']}: {e}")
+                    rec_skipped += 1
+                    time.sleep(2)
 
                 time.sleep(0.2)
 

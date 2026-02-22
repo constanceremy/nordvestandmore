@@ -2112,7 +2112,7 @@ def _parse_kk_date(text: str) -> str | None:
     return parse_danish_date(text)
 
 
-def _fetch_kk_events(location: str) -> list[dict]:
+def _fetch_kk_cludo_events(location: str) -> list[dict]:
     """Fetch all events from Cludo API for a given KK library location."""
     headers = {
         "Content-Type": "application/json",
@@ -2162,7 +2162,7 @@ def parse_kk_bibliotek(html: str, page_url: str) -> list[dict]:
             location = urllib.parse.unquote(m.group(1))
 
     # Fetch events from Cludo API
-    raw_docs = _fetch_kk_events(location)
+    raw_docs = _fetch_kk_cludo_events(location)
     if not raw_docs:
         return events
 
@@ -3203,6 +3203,9 @@ def build_notion_props(ev: dict) -> dict:
             "rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]
         }
 
+    if ev.get("recurring"):
+        props["Recurring"] = {"checkbox": True}
+
     return props
 
 
@@ -3374,36 +3377,40 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
             dedup_key_no_time = f"{event_url}##{ev.get('start_date', '')}"
             page_id = existing.get(dedup_key_no_time)
 
-        if page_id:
-            # Update existing
-            resp = notion_update(page_id, ev)
-            if resp.status_code == 429:
-                time.sleep(1.5)
+        try:
+            if page_id:
+                # Update existing
                 resp = notion_update(page_id, ev)
-            updated += 1
-        else:
-            # Create new
-            resp = notion_create(ev)
-            if resp.status_code == 429:
-                time.sleep(1.5)
-                resp = notion_create(ev)
-            if resp.status_code < 400:
-                try:
-                    new_id = resp.json().get("id")
-                    if new_id:
-                        existing[dedup_key] = new_id
-                        all_entries.append({
-                            "page_id": new_id,
-                            "name": ev.get("event_name", ""),
-                            "start_date": ev.get("start_date", ""),
-                            "source": site_key,
-                            "url": event_url,
-                        })
-                except Exception:
-                    pass
-                created += 1
+                if resp.status_code == 429:
+                    time.sleep(1.5)
+                    resp = notion_update(page_id, ev)
+                updated += 1
             else:
-                log(f"  Create failed for {ev.get('event_name')}: {resp.status_code}")
+                # Create new
+                resp = notion_create(ev)
+                if resp.status_code == 429:
+                    time.sleep(1.5)
+                    resp = notion_create(ev)
+                if resp.status_code < 400:
+                    try:
+                        new_id = resp.json().get("id")
+                        if new_id:
+                            existing[dedup_key] = new_id
+                            all_entries.append({
+                                "page_id": new_id,
+                                "name": ev.get("event_name", ""),
+                                "start_date": ev.get("start_date", ""),
+                                "source": site_key,
+                                "url": event_url,
+                            })
+                    except Exception:
+                        pass
+                    created += 1
+                else:
+                    log(f"  Create failed for {ev.get('event_name')}: {resp.status_code}")
+        except requests.exceptions.RequestException as e:
+            log(f"  ⚠️ Notion API error for {ev.get('event_name')}: {e}")
+            time.sleep(2)
 
         log(f"    → {ev.get('event_name')} | {ev.get('start_date')} | {ev.get('location')}")
         time.sleep(0.3)

@@ -249,10 +249,14 @@ def scrape_facebook_events(page_url: str) -> list[dict]:
                             if len(text) > 20:
                                 break
 
-                        # Normalize the URL
+                        # Normalize the URL — preserve event_time_id for recurring events
                         event_id_match = re.search(r"/events/(\d+)", href)
                         if event_id_match:
                             event_url = f"https://www.facebook.com/events/{event_id_match.group(1)}/"
+                            # Recurring events have ?event_time_id=... to distinguish dates
+                            time_id_match = re.search(r"event_time_id=(\d+)", href)
+                            if time_id_match:
+                                event_url += f"?event_time_id={time_id_match.group(1)}"
                             event_links.append({
                                 "url": event_url,
                                 "text": text.strip(),
@@ -262,12 +266,26 @@ def scrape_facebook_events(page_url: str) -> list[dict]:
                     if DEBUG:
                         log(f"  Link extraction error: {e}")
 
-            # Deduplicate by event URL
+            # Deduplicate by event URL.
+            # For recurring events: if we have event_time_id versions,
+            # skip the base URL (it's redundant / just shows the next date).
             seen_urls = set()
+            base_event_ids_with_time_ids = set()
             for ev in event_links:
-                if ev["url"] not in seen_urls:
-                    seen_urls.add(ev["url"])
-                    events.append(ev)
+                if "event_time_id" in ev["url"]:
+                    eid = re.search(r"/events/(\d+)/", ev["url"])
+                    if eid:
+                        base_event_ids_with_time_ids.add(eid.group(1))
+            for ev in event_links:
+                if ev["url"] in seen_urls:
+                    continue
+                # Skip base URL if event_time_id versions exist
+                eid = re.search(r"/events/(\d+)/", ev["url"])
+                if (eid and eid.group(1) in base_event_ids_with_time_ids
+                        and "event_time_id" not in ev["url"]):
+                    continue
+                seen_urls.add(ev["url"])
+                events.append(ev)
 
             # If no structured links found, fall back to full page text for Gemini
             if not events:
@@ -362,6 +380,113 @@ def fetch_event_name_from_page(event_url: str) -> str | None:
     except Exception as e:
         if DEBUG:
             log(f"  Could not fetch event page title: {e}")
+    return None
+
+
+def fetch_recurring_dates(event_url: str) -> list[dict] | None:
+    """
+    Visit a Facebook event page and check if it's a recurring event.
+    If so, extract all upcoming dates.
+    Returns a list of dicts [{event_date, start_time, event_time_url}, ...] or None.
+    """
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context_opts = {
+                "user_agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                "viewport": {"width": 1280, "height": 900},
+                "locale": "en-US",
+            }
+            if os.path.exists(FB_COOKIES_FILE):
+                context_opts["storage_state"] = FB_COOKIES_FILE
+
+            context = browser.new_context(**context_opts)
+            page = context.new_page()
+            page.goto(event_url, wait_until="domcontentloaded", timeout=15000)
+            time.sleep(2)
+
+            # Dismiss popups
+            for selector in [
+                'div[aria-label="Close"]',
+                'button:has-text("Decline optional cookies")',
+                'button:has-text("Not now")',
+            ]:
+                try:
+                    el = page.query_selector(selector)
+                    if el:
+                        el.click()
+                        time.sleep(0.3)
+                except Exception:
+                    pass
+
+            page_text = page.evaluate("() => document.body.innerText") or ""
+
+            # Check if this is a recurring event — look for multiple date lines
+            # Facebook recurring events show upcoming dates with links like
+            # /events/ID/?event_time_id=XXX
+            recurring_links = []
+            all_links = page.query_selector_all("a[href]")
+            for link in all_links:
+                try:
+                    href = link.get_attribute("href") or ""
+                    if "event_time_id" in href:
+                        # Get the text around this link (the date)
+                        link_text = link.evaluate("el => el.innerText") or ""
+                        # Also check parent for more context
+                        parent_text = link.evaluate(
+                            "el => el.parentElement ? el.parentElement.innerText : ''"
+                        ) or ""
+                        text_to_parse = parent_text if len(parent_text) > len(link_text) else link_text
+
+                        time_id_match = re.search(r"event_time_id=(\d+)", href)
+                        event_id_match = re.search(r"/events/(\d+)", href)
+                        if time_id_match and event_id_match:
+                            time_url = (
+                                f"https://www.facebook.com/events/"
+                                f"{event_id_match.group(1)}/"
+                                f"?event_time_id={time_id_match.group(1)}"
+                            )
+                            parsed = try_parse_date_from_text(text_to_parse)
+                            if parsed and parsed.get("event_date"):
+                                recurring_links.append({
+                                    "event_date": parsed["event_date"],
+                                    "start_time": parsed.get("start_time"),
+                                    "event_time_url": time_url,
+                                })
+                except Exception:
+                    pass
+
+            browser.close()
+
+            # Deduplicate by date + time_url
+            if recurring_links:
+                seen = set()
+                deduped = []
+                for rl in recurring_links:
+                    key = rl["event_time_url"]
+                    if key not in seen:
+                        seen.add(key)
+                        deduped.append(rl)
+                # Only treat as recurring if we found 2+ dates
+                if len(deduped) >= 2:
+                    # Filter out past dates
+                    today = date.today()
+                    future = [
+                        d for d in deduped
+                        if date.fromisoformat(d["event_date"]) >= today
+                    ]
+                    if future:
+                        if DEBUG:
+                            log(f"  🔄 Recurring event with {len(future)} upcoming date(s)")
+                        return future
+
+    except Exception as e:
+        if DEBUG:
+            log(f"  Could not check recurring dates: {e}")
     return None
 
 
@@ -768,6 +893,22 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                     "description": text[:200],
                 }]
 
+            # ── Check for recurring event: visit event page to find all dates ──
+            # Only do this if the listing page didn't already give us event_time_id links
+            if (len(parsed_events) == 1
+                    and event_url and event_url != page_url
+                    and "event_time_id" not in event_url):
+                recurring = fetch_recurring_dates(event_url)
+                if recurring:
+                    base = parsed_events[0]
+                    parsed_events = []
+                    for rd in recurring:
+                        entry = dict(base)
+                        entry["event_date"] = rd["event_date"]
+                        entry["start_time"] = rd.get("start_time") or base.get("start_time")
+                        entry["_event_time_url"] = rd.get("event_time_url")
+                        parsed_events.append(entry)
+
         if not parsed_events:
             if DEBUG:
                 log(f"  No events parsed from: {event_url}")
@@ -788,6 +929,9 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                 except ValueError:
                     pass
 
+            # Use event_time_url if available (recurring event), otherwise base event_url
+            this_event_url = event_data.pop("_event_time_url", None) or event_url
+
             # Use the same extraction logic as load_fb_to_ig_map for consistent keys
             fb_key = _extract_fb_id(page_url).lower()
             ig_handle = fb_to_ig.get(fb_key) or fb_to_ig.get(page_name.lower())
@@ -803,7 +947,7 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                 "description": event_data.get("description"),
                 "source_type": "Facebook",
                 "source": page_name,
-                "url": event_url,
+                "url": this_event_url,
                 "ig_handle": ig_handle,
             }
 

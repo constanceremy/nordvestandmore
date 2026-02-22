@@ -146,7 +146,7 @@ RECURRING_EVENTS = [
         "event_name": "Taca Copenhagen Social Run for Men",
         "organizer": "Taca Copenhagen",
         "ig_handle": "@tacacopenhagen",
-        "location": "Taca Copenhagen",
+        "location": "Engsvinget 55, 2400 København NV",
         "url": "https://www.instagram.com/tacacopenhagen/",
         "start_time": "18:00",
         "end_time": None,
@@ -276,6 +276,7 @@ def generate_recurring_events(months_ahead: int = 6) -> list[dict]:
                 "url": rec.get("url", ""),
                 "ig_handle": rec.get("ig_handle", ""),
                 "description": f"Recurring event: {rec['event_name']}",
+                "recurring": True,
             }
             all_events.append(ev)
 
