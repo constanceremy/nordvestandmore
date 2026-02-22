@@ -115,7 +115,7 @@ def notion_existing_urls():
 
         for page in data.get("results", []):
             props = page.get("properties", {})
-            url_prop = props.get("URL", {})
+            url_prop = props.get("Event Link", {})
             url_val = url_prop.get("url")
             if url_val:
                 url_to_page[url_val] = page["id"]
@@ -139,11 +139,11 @@ def notion_existing_urls():
 def build_props(ev: dict):
     props = {}
     # Required
-    props["Name"] = {"title": [{"text": {"content": ev["title"]}}]}
+    props["Event Name"] = {"title": [{"text": {"content": ev["title"]}}]}
 
     # Optional – only include when present
     if ev.get("url"):
-        props["URL"] = {"url": ev["url"]}
+        props["Event Link"] = {"url": ev["url"]}
     if ev.get("start_date"):
         props["Start Date"] = {"date": {"start": ev["start_date"]}}
     if ev.get("end_date"):

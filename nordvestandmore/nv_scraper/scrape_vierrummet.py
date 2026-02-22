@@ -121,7 +121,7 @@ def notion_existing_urls() -> dict:
         data = r.json()
         for page in data.get("results", []):
             props = page.get("properties", {})
-            url_val = props.get("URL", {}).get("url")
+            url_val = props.get("Event Link", {}).get("url")
             if url_val:
                 url_to_page[url_val] = page["id"]
         if not data.get("has_more"):
@@ -132,9 +132,9 @@ def notion_existing_urls() -> dict:
 
 def build_props(ev: dict) -> dict:
     props = {
-        "Name": {"title":[{"text":{"content": ev["title"]}}]},
+        "Event Name": {"title":[{"text":{"content": ev["title"]}}]},
     }
-    if ev.get("url"):         props["URL"]        = {"url": ev["url"]}
+    if ev.get("url"):         props["Event Link"]  = {"url": ev["url"]}
     if ev.get("start_date"):  props["Start Date"] = {"date":{"start": ev["start_date"]}}
     if ev.get("end_date"):    props["End Date"]   = {"date":{"start": ev["end_date"]}}
     if ev.get("start_time_disp"): props["Start Time"] = {"rich_text":[{"text":{"content": ev["start_time_disp"]}}]}
