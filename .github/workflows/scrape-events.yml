@@ -1,0 +1,68 @@
+name: Scrape Events
+
+on:
+  schedule:
+    # Runs daily at 19:30 UTC = ~9:30 PM Copenhagen (summer) / ~8:30 PM (winter)
+    - cron: "30 19 * * *"
+  workflow_dispatch:  # Allow manual runs from GitHub UI
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # 2-hour max (scraping can be slow)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: nordvestandmore/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r nordvestandmore/requirements.txt
+
+      - name: Install Playwright browsers
+        run: playwright install chromium --with-deps
+
+      - name: Restore Facebook cookies
+        if: env.FB_COOKIES_B64 != ''
+        env:
+          FB_COOKIES_B64: ${{ secrets.FB_COOKIES_B64 }}
+        run: echo "$FB_COOKIES_B64" | base64 -d > nordvestandmore/fb_scraper/fb_cookies.json
+
+      - name: Run scraper
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          IG_USERNAME: ${{ secrets.IG_USERNAME }}
+          IG_PASSWORD: ${{ secrets.IG_PASSWORD }}
+          DEBUG: "1"
+        working-directory: nordvestandmore
+        run: python3 run_scraper.py all --auto
+
+      - name: Upload log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-log-${{ github.run_id }}
+          path: nordvestandmore/logs/
+          retention-days: 14
+
+      - name: Send failure notification
+        if: failure()
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          if [ -n "$NTFY_TOPIC" ]; then
+            curl -s \
+              -H "Title: NV&More Scraper Failed" \
+              -H "Priority: high" \
+              -H "Tags: warning" \
+              -d "The daily event scraper failed. Check GitHub Actions for details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              "https://ntfy.sh/$NTFY_TOPIC"
+          fi
