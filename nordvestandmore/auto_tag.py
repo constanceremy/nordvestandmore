@@ -34,14 +34,31 @@ TAG_RULES: list[dict] = [
         ],
         "patterns": [r"\bBOGKLUB\b", r"\bBOOK\s+CLUB\b"],
     },
+    # ── Singing / Choir ──  (before Spirituality so "Fællessang" → Singing)
+    {
+        "tag": "Singing",
+        "keywords": [
+            "fællessang", "kor ", "koret", "damekor",
+            "højskolesang", "barselskor", "barselskoret",
+            "tune in! - koret", "syng i flok",
+        ],
+        "patterns": [r"\bKORET\b", r"\bFÆLLESSANG\b"],
+    },
+    # ── Volunteering ──  (before Spirituality so "sogneindsamling" → Volunteering)
+    {
+        "tag": "Volunteering",
+        "keywords": [
+            "sogneindsamling", "indsamling",
+            "planlægningsmøde",
+        ],
+        "patterns": [],
+    },
     # ── Church / Spiritual ──  (before Drinks so "G&T-natkirke" → Church)
     {
         "tag": "Spirituality",
         "keywords": [
             "natkirke", "kirke", "gudstjeneste", "aftensang",
-            "højskolesang", "fællessang", "indsamling",
-            "sogneindsamling", "shamanist", "trommerejse",
-            "kor ", "koret", "damekor",
+            "café rummet", "café larsen", "godnathistorier",
         ],
         "patterns": [r"\bNATKIRKE\b", r"\bKIRKE\b"],
     },
@@ -56,6 +73,8 @@ TAG_RULES: list[dict] = [
         # Note: "Rört" is a venue that hosts many event types (yoga, book
         # club, kirtan, etc.) — NOT just sauna. Only explicit "sauna"
         # keywords trigger this tag.
+        # Exception: if "dance" is also present → Festival & Party instead.
+        "except_when": {"keywords": ["dance"], "redirect": "Festival & Party"},
     },
     # ── Quiz / Banko / Bingo ──
     {
@@ -126,7 +145,6 @@ TAG_RULES: list[dict] = [
             "surdejsbrød", "croissant",
             "facilitator uddannelse",
             "drawing", "painting", "sketching", "expressive form",
-            "sundhed",
         ],
         "patterns": [r"\bWORKSHOP\b", r"\bKURSUS\b", r"\bMASTERCLASS\b"],
     },
@@ -138,6 +156,7 @@ TAG_RULES: list[dict] = [
             "sound bath", "soundbath", "sound journey", "gong bath",
             "kirtan", "satsang", "retræte", "retreat",
             "tantra", "embodied", "ceremony",
+            "shamanist", "trommerejse", "sundhed",
         ],
         "patterns": [r"\bYOGA\b", r"\bYIN\b"],
     },
@@ -152,17 +171,25 @@ TAG_RULES: list[dict] = [
         ],
         "patterns": [r"\bRUN\b(?!\s+(?:BY|AT|IN|ON|THE))", r"\bløb\b"],
     },
+    # ── Food Special ──  (before Community Dinner so "Fry-Day" → Food Special)
+    {
+        "tag": "Food Special",
+        "keywords": [
+            "fry-day",
+        ],
+        "patterns": [r"\bFRY-DAY\b"],
+    },
     # ── Community Dinner / Food ──
     {
         "tag": "Community Dinner",
         "keywords": [
             "fællesspisning", "middag for alle", "community breakfast",
             "community dinner", "potluck", "peoples kitchen",
-            "supperclub", "supper club", "madklub", "fry-day",
-            "aperitivo", "frokost", "madspild", "stories on plates",
-            "gud & burger", "godnathistorier",
+            "supperclub", "supper club", "madklub",
+            "frokost", "madspild", "stories on plates",
+            "gud & burger",
         ],
-        "patterns": [r"\bFRY-DAY\b"],
+        "patterns": [],
     },
     # ── Speed Dating ──
     {
@@ -230,8 +257,10 @@ TAG_RULES: list[dict] = [
             "børn", "baby", "barsel", "barsels", "familie",
             "ungdomsgård", "fritidsklub", "teaterskole",
             "gravidcirkel", "mødre",
+            "children", "kids", "playroom", "legestue",
+            "børnekultur", "musikleg", "babysalmesang",
         ],
-        "patterns": [],
+        "patterns": [r"\b\d+.?\d*\s*(?:year|år)\s*old"],
     },
     # ── Talk / Lecture / Conference ──
     {
@@ -247,18 +276,19 @@ TAG_RULES: list[dict] = [
     {
         "tag": "Festival & Party",
         "keywords": [
-            "festival", "fest ", "party", "sommerfest",
-            "fødselsdags",
+            "festival", "party",
+            "fødselsdags", "aperitivo", "klub rört",
+            "dance x sauna",
         ],
-        "patterns": [r"\bFEST\b(?!\w)", r"\bFESTIVAL\b"],
+        "patterns": [r"\bFESTIVAL\b"],
     },
     # ── Social Gathering ──
     {
         "tag": "Social Gathering",
         "keywords": [
             "neighbor sunday", "social", "gathering", "sharing circle",
-            "café rummet", "onsdagsklubben", "café larsen",
-            "møde", "planlægningsmøde", "open hours",
+            "onsdagsklubben", "sommerfest",
+            "møde", "open hours",
             "demonstration",
         ],
         "patterns": [],
@@ -288,6 +318,28 @@ _HOURS_PATTERNS = [
 ]
 
 
+# ── Deals / special-price announcements → route to Deals DB ──
+_DEAL_KEYWORDS = [
+    "tilbud", "rabat", "nedsat", "specialpris", "udsalg",
+    "deal", "deals", "discount", "special price", "special offer",
+    "half price", "halv pris", "studierabat", "student discount",
+    "frokosttilbud", "lunch deal", "dagstilbud", "ugens tilbud",
+    "2 for 1", "two for one", "2-for-1",
+    "tirsdagsdeals", "onsdagsdeals", "torsdagsdeals",
+    "mandagsdeals", "fredagsdeals",
+    "% off", "% rabat",
+]
+
+_DEAL_PATTERNS = [
+    r"\b\d+\s*(?:kr|dkk)\.?\s.*\btilbud\b",
+    r"\btilbud\b.*\b\d+\s*(?:kr|dkk)",
+    r"\b\d+\s*for\s*\d+\b",          # e.g. "2 for 1"
+    r"\b\d+%\s*(?:off|rabat)\b",      # e.g. "20% off"
+    r"\bspar\s+\d+",                  # e.g. "spar 50kr"
+    r"\bkun\s+\d+\s*kr\b",            # e.g. "kun 49kr"
+]
+
+
 # ── Non-event posts to skip entirely (not routed anywhere) ──
 _SKIP_KEYWORDS = [
     "application deadline", "ansøgningsfrist", "deadline",
@@ -302,6 +354,18 @@ def is_not_event(event_name: str) -> bool:
             return True
     for pat in _HOURS_PATTERNS:
         if re.search(pat, name_lower):
+            return True
+    return False
+
+
+def is_deal(event_name: str, description: str = "") -> bool:
+    """Return True if the event name/description is a deal/special-price announcement."""
+    combined = f"{event_name} {description}".lower().strip()
+    for kw in _DEAL_KEYWORDS:
+        if kw in combined:
+            return True
+    for pat in _DEAL_PATTERNS:
+        if re.search(pat, combined, re.IGNORECASE):
             return True
     return False
 
@@ -359,15 +423,37 @@ def classify_event(
     combined_raw = f"{event_name} | {description} | {organizer}"
 
     for rule in TAG_RULES:
+        matched = False
+
         # Check keywords (substring match in lowercased text)
         for kw in rule.get("keywords", []):
             if kw.lower() in combined:
-                return rule["tag"]
+                matched = True
+                break
 
         # Check regex patterns (case-insensitive)
-        for pattern in rule.get("patterns", []):
-            if re.search(pattern, combined_raw, re.IGNORECASE):
-                return rule["tag"]
+        if not matched:
+            for pattern in rule.get("patterns", []):
+                if re.search(pattern, combined_raw, re.IGNORECASE):
+                    matched = True
+                    break
+
+        if not matched:
+            continue
+
+        # Check exceptions: if an "except_when" condition is met, redirect
+        exc = rule.get("except_when")
+        if exc:
+            exc_hit = any(ek.lower() in combined for ek in exc.get("keywords", []))
+            if not exc_hit:
+                exc_hit = any(
+                    re.search(p, combined_raw, re.IGNORECASE)
+                    for p in exc.get("patterns", [])
+                )
+            if exc_hit:
+                return exc["redirect"]
+
+        return rule["tag"]
 
     return None
 

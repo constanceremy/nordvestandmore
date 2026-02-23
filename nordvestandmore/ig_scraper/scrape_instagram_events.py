@@ -37,8 +37,9 @@ import requests
 # Add parent dir to path for shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from dedup import load_source_mapping, find_duplicate
-from auto_tag import classify_event, is_not_event, should_skip_entirely, is_excluded_location
+from auto_tag import classify_event, is_not_event, is_deal, should_skip_entirely, is_excluded_location
 from hours_db import push_to_hours_db
+from deals_db import push_to_deals_db
 
 # -------------------- CONFIG --------------------
 SLUG = "INSTAGRAM"
@@ -631,6 +632,20 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 }, log_fn=log)
                 continue
 
+            # Route deals/special-price announcements to Deals DB
+            if is_deal(event_data.get("event_name", ""), event_data.get("description", "")):
+                push_to_deals_db({
+                    "event_name": event_data.get("event_name"),
+                    "place": event_data.get("location"),
+                    "source": f"@{account}",
+                    "description": event_data.get("description"),
+                    "url": post_url,
+                    "source_type": "Instagram",
+                    "ig_handle": f"@{account}",
+                    "date": post.date_utc.date().isoformat(),
+                }, log_fn=log)
+                continue
+
             # Skip retreats from Rört — they're not in Nordvest
             if account.lower() in ("rort.copenhagen",):
                 ev_text = f"{event_data.get('event_name', '')} {event_data.get('description', '')}".lower()
@@ -686,6 +701,16 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 "cafe.gazou": "Cafe Gazou",
                 "lygtenstation": "Lygten Station",
                 "dansekapellet": "Dansekapellet",
+                "urban13_cph": "Urban 13",
+                "grundtvigskirke": "Grundtvigs Kirke",
+                "ansgarkirken": "Ansgarkirken",
+                "ungdomshuset_d61": "Ungdomshuset",
+                "rort.copenhagen": "Rört",
+                "tribecabeer.pizzalab": "Tribeca",
+                "fofkbh_nordsj": "Aftenskolernes Hus",
+                "davescph": "Dave's",
+                "goldschmidts_musikakademi": "Goldschmidts Musikakademi",
+                "kapernaumskirken": "Kapernaumskirken",
             }
             location = _DEFAULT_LOCATIONS.get(account.lower()) or event_data.get("location")
 

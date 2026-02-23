@@ -1,0 +1,57 @@
+name: Sync to Wix
+
+on:
+  workflow_dispatch:  # Manual trigger from GitHub UI
+    inputs:
+      dry_run:
+        description: "Dry run (preview only, no changes)"
+        type: boolean
+        default: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: nordvestandmore/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install requests
+
+      - name: Sync Notion → Wix
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          WIX_API_KEY: ${{ secrets.WIX_API_KEY }}
+          WIX_SITE_ID: ${{ secrets.WIX_SITE_ID }}
+          WIX_COLLECTION_ID: Import1
+        working-directory: nordvestandmore
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python3 sync_to_wix.py --dry-run
+          else
+            python3 sync_to_wix.py
+          fi
+
+      - name: Send failure notification
+        if: failure()
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          if [ -n "$NTFY_TOPIC" ]; then
+            curl -s \
+              -H "Title: NV&More Wix Sync Failed" \
+              -H "Priority: high" \
+              -H "Tags: warning" \
+              -d "Notion → Wix sync failed. Check GitHub Actions: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              "https://ntfy.sh/$NTFY_TOPIC"
+          fi

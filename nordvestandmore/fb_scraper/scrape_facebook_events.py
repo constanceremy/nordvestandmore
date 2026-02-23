@@ -28,8 +28,9 @@ import requests
 # Add parent dir to path for shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from dedup import load_source_mapping, find_duplicate, load_fb_to_ig_map, _extract_fb_id
-from auto_tag import classify_event, is_not_event, should_skip_entirely, is_excluded_location
+from auto_tag import classify_event, is_not_event, is_deal, should_skip_entirely, is_excluded_location
 from hours_db import push_to_hours_db
+from deals_db import push_to_deals_db
 
 # -------------------- CONFIG --------------------
 SLUG = "FACEBOOK"
@@ -1107,6 +1108,20 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                     "event_name": event_data.get("event_name"),
                     "source": page_name,
                     "location": event_data.get("location"),
+                    "description": event_data.get("description"),
+                    "url": event_url,
+                    "source_type": "Facebook",
+                    "ig_handle": fb_to_ig.get(_extract_fb_id(page_url).lower()),
+                    "date": date.today().isoformat(),
+                }, log_fn=log)
+                continue
+
+            # Route deals/special-price announcements to Deals DB
+            if is_deal(event_data.get("event_name", ""), event_data.get("description", "")):
+                push_to_deals_db({
+                    "event_name": event_data.get("event_name"),
+                    "place": event_data.get("location"),
+                    "source": page_name,
                     "description": event_data.get("description"),
                     "url": event_url,
                     "source_type": "Facebook",
