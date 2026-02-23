@@ -130,7 +130,7 @@ def notion_existing_urls() -> dict:
     log("preload URLs:", len(url_to_page))
     return url_to_page
 
-def build_props(ev: dict) -> dict:
+def build_props(ev: dict, is_update: bool = False) -> dict:
     props = {
         "Event Name": {"title":[{"text":{"content": ev["title"]}}]},
     }
@@ -139,9 +139,11 @@ def build_props(ev: dict) -> dict:
     if ev.get("end_date"):    props["End Date"]   = {"date":{"start": ev["end_date"]}}
     if ev.get("start_time_disp"): props["Start Time"] = {"rich_text":[{"text":{"content": ev["start_time_disp"]}}]}
     if ev.get("end_time_disp"):   props["End Time"]   = {"rich_text":[{"text":{"content": ev["end_time_disp"]}}]}
-    if ev.get("location"):    props["Location"]   = {"rich_text":[{"text":{"content": ev["location"]}}]}
+    # Location — only set on create, preserve manual edits on update
+    if ev.get("location") and not is_update:
+        props["Location"]   = {"rich_text":[{"text":{"content": ev["location"]}}]}
     if ev.get("source"):      props["Source"]     = {"rich_text":[{"text":{"content": ev["source"]}}]}
-    if ev.get("raw_line"):
+    if ev.get("raw_line") and not is_update:
         raw = ev["raw_line"]
         if len(raw) > 1900: raw = raw[:1900]  # stay < Notion 2000 limit
         props["Raw Line"] = {"rich_text":[{"text":{"content": raw}}]}
@@ -156,7 +158,7 @@ def notion_create(ev: dict):
     return r
 
 def notion_update(page_id: str, ev: dict):
-    payload = {"properties": build_props(ev)}
+    payload = {"properties": build_props(ev, is_update=True)}
     r = requests.patch(f"{NOTION_API}/pages/{page_id}", headers=NOTION_HEADERS, json=payload, timeout=30)
     if r.status_code >= 400:
         try: print("UPDATE ERROR:", r.status_code, r.json())

@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dedup import load_source_mapping, find_duplicate, similarity
 from auto_tag import classify_event, is_not_event, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
+from fix_locations import clean_location
 
 # ────────────────── Config ──────────────────
 
@@ -3141,8 +3142,14 @@ def notion_existing_entries() -> tuple[dict, list]:
     return url_to_page, all_entries
 
 
-def build_notion_props(ev: dict) -> dict:
-    """Build Notion properties using the unified column schema."""
+def build_notion_props(ev: dict, is_update: bool = False) -> dict:
+    """Build Notion properties using the unified column schema.
+
+    Args:
+        ev: event dict with scraped data
+        is_update: if True, skip user-editable fields (Tags, Location,
+                   Description) so manual corrections in Notion are preserved.
+    """
     props = {}
 
     name = ev.get("event_name") or "Untitled Event"
@@ -3167,7 +3174,8 @@ def build_notion_props(ev: dict) -> dict:
             "rich_text": [{"text": {"content": ev["end_time_disp"]}}]
         }
 
-    if ev.get("location"):
+    # Location — only set on create, preserve manual edits on update
+    if ev.get("location") and not is_update:
         props["Location"] = {
             "rich_text": [{"text": {"content": ev["location"][:2000]}}]
         }
@@ -3185,7 +3193,8 @@ def build_notion_props(ev: dict) -> dict:
             "rich_text": [{"text": {"content": ev["organizer"][:2000]}}]
         }
 
-    if ev.get("description"):
+    # Description — only set on create, preserve manual edits on update
+    if ev.get("description") and not is_update:
         props["Description"] = {
             "rich_text": [{"text": {"content": ev["description"][:2000]}}]
         }
@@ -3206,8 +3215,8 @@ def build_notion_props(ev: dict) -> dict:
     if ev.get("recurring"):
         props["Recurring"] = {"checkbox": True}
 
-    # Tag (select) — auto-classified event category
-    if ev.get("tag"):
+    # Tag (select) — only set on create, preserve manual edits on update
+    if ev.get("tag") and not is_update:
         props["Tags"] = {"select": {"name": ev["tag"]}}
 
     # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
@@ -3227,7 +3236,7 @@ def notion_create(ev: dict) -> requests.Response:
 
 
 def notion_update(page_id: str, ev: dict) -> requests.Response:
-    payload = {"properties": build_notion_props(ev)}
+    payload = {"properties": build_notion_props(ev, is_update=True)}
     return requests.patch(
         f"{NOTION_API}/pages/{page_id}", headers=NOTION_HEADERS, json=payload, timeout=30,
     )
@@ -3371,7 +3380,7 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
             "end_date": event_data.get("event_date"),
             "start_time_disp": to_12h(event_data.get("start_time")),
             "end_time_disp": to_12h(event_data.get("end_time")),
-            "location": event_data.get("location"),
+            "location": clean_location(event_data.get("location")) or event_data.get("location"),
             "description": event_data.get("description"),
             "source_type": "Website",
             "source": site_key,

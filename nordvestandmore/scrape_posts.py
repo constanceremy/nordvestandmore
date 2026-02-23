@@ -42,6 +42,7 @@ from dedup import load_source_mapping, find_duplicate
 from auto_tag import classify_event, is_not_event, is_deal, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
 from deals_db import push_to_deals_db
+from fix_locations import clean_location
 
 # -------------------- CONFIG --------------------
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
@@ -292,7 +293,7 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
             start_date = date_obj["start"] if date_obj else ""
             source_parts = props.get("Source", {}).get("rich_text", [])
             source = source_parts[0]["text"]["content"] if source_parts else ""
-            key = f"{url_val}|{name}|{start_date}"
+            key = f"{url_val}|{start_date}"
             if url_val:
                 key_to_page[key] = page["id"]
             all_entries.append({
@@ -309,8 +310,14 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
     return key_to_page, all_entries
 
 
-def build_notion_props(ev: dict) -> dict:
-    """Build Notion properties using the unified column schema."""
+def build_notion_props(ev: dict, is_update: bool = False) -> dict:
+    """Build Notion properties using the unified column schema.
+
+    Args:
+        ev: event dict with scraped data
+        is_update: if True, skip user-editable fields (Tags, Location,
+                   Description) so manual corrections in Notion are preserved.
+    """
     props = {}
 
     name = ev.get("event_name") or "Untitled Event"
@@ -326,7 +333,8 @@ def build_notion_props(ev: dict) -> dict:
         props["Start Time"] = {"rich_text": [{"text": {"content": ev["start_time_disp"]}}]}
     if ev.get("end_time_disp"):
         props["End Time"] = {"rich_text": [{"text": {"content": ev["end_time_disp"]}}]}
-    if ev.get("location"):
+    # Location — only set on create, preserve manual edits on update
+    if ev.get("location") and not is_update:
         props["Location"] = {"rich_text": [{"text": {"content": ev["location"][:2000]}}]}
     if ev.get("source"):
         props["Source"] = {"rich_text": [{"text": {"content": ev["source"][:2000]}}]}
@@ -334,7 +342,8 @@ def build_notion_props(ev: dict) -> dict:
         props["Source Type"] = {"select": {"name": ev["source_type"]}}
     if ev.get("organizer"):
         props["Organizer"] = {"rich_text": [{"text": {"content": ev["organizer"][:2000]}}]}
-    if ev.get("description"):
+    # Description — only set on create, preserve manual edits on update
+    if ev.get("description") and not is_update:
         props["Description"] = {"rich_text": [{"text": {"content": ev["description"][:2000]}}]}
     if ev.get("possible_duplicate") is not None:
         props["Possible Duplicate"] = {"checkbox": bool(ev["possible_duplicate"])}
@@ -343,8 +352,8 @@ def build_notion_props(ev: dict) -> dict:
     if ev.get("to_tag"):
         props["To tag"] = {"rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]}
 
-    # Tag (select) — auto-classified event category
-    if ev.get("tag"):
+    # Tag (select) — only set on create, preserve manual edits on update
+    if ev.get("tag") and not is_update:
         props["Tags"] = {"select": {"name": ev["tag"]}}
 
     # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
@@ -357,7 +366,8 @@ def build_notion_props(ev: dict) -> dict:
 
 
 def make_dedup_key(ev: dict) -> str:
-    return f"{ev.get('url', '')}|{ev.get('event_name', '')}|{ev.get('start_date', '')}"
+    """Build a deduplication key: URL + date (no name — Gemini is non-deterministic)."""
+    return f"{ev.get('url', '')}|{ev.get('start_date', '')}"
 
 
 def notion_create(ev: dict):
@@ -375,7 +385,7 @@ def notion_create(ev: dict):
 
 
 def notion_update(page_id: str, ev: dict):
-    payload = {"properties": build_notion_props(ev)}
+    payload = {"properties": build_notion_props(ev, is_update=True)}
     r = _notion_request("patch", f"{NOTION_API}/pages/{page_id}", json=payload)
     if r.status_code >= 400:
         try:
@@ -475,7 +485,7 @@ def process_post(L, client, shortcode: str, post_url: str,
             "end_date": event_date_str,
             "start_time_disp": to_12h(event_data.get("start_time")),
             "end_time_disp": to_12h(event_data.get("end_time")),
-            "location": event_data.get("location"),
+            "location": clean_location(event_data.get("location")) or event_data.get("location"),
             "description": event_data.get("description"),
             "source_type": "Instagram",
             "source": f"@{account}",
