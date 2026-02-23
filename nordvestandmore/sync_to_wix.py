@@ -299,17 +299,65 @@ def wix_remove_item(item_id: str) -> bool:
     return True
 
 
+def wix_bulk_remove(item_ids: list[str]) -> int:
+    """Remove items in bulk from the Wix collection."""
+    payload = {
+        "dataCollectionId": WIX_COLLECTION_ID,
+        "dataItemIds": item_ids,
+    }
+    r = requests.post(
+        f"{WIX_API}/items/bulk-remove",
+        headers=WIX_HEADERS, json=payload, timeout=60,
+    )
+    if r.status_code >= 400:
+        log(f"  Bulk remove failed ({r.status_code}), falling back to individual deletes...")
+        removed = 0
+        for item_id in item_ids:
+            if wix_remove_item(item_id):
+                removed += 1
+            time.sleep(0.1)
+        return removed
+    return len(item_ids)
+
+
 def wix_clear_collection():
-    """Remove all items from the Wix collection."""
-    items = wix_get_all_items()
-    log(f"Clearing {len(items)} items from Wix collection...")
-    removed = 0
-    for item in items:
-        item_id = item.get("id") or item.get("_id")
-        if item_id and wix_remove_item(item_id):
-            removed += 1
-        time.sleep(0.1)
-    log(f"Removed {removed}/{len(items)} items")
+    """Remove ALL items from the Wix collection (loops until empty)."""
+    total_removed = 0
+    pass_num = 0
+
+    while True:
+        pass_num += 1
+        # Always fetch from offset 0 since we're deleting
+        payload = {
+            "query": {
+                "filter": {},
+                "paging": {"limit": 50, "offset": 0},
+            }
+        }
+        r = requests.post(
+            f"{WIX_API}/items/query",
+            headers=WIX_HEADERS,
+            json={"dataCollectionId": WIX_COLLECTION_ID, **payload},
+            timeout=30,
+        )
+        if r.status_code != 200:
+            log(f"  Query error during clear: {r.status_code}")
+            break
+
+        data = r.json()
+        batch = data.get("dataItems", [])
+        remaining = data.get("pagingMetadata", {}).get("total", 0)
+
+        if not batch:
+            break
+
+        log(f"  Pass {pass_num}: removing {len(batch)} items ({remaining} remaining)...")
+        ids = [item.get("id") or item.get("_id") for item in batch if item.get("id") or item.get("_id")]
+        removed = wix_bulk_remove(ids)
+        total_removed += removed
+        time.sleep(0.5)  # brief pause between passes
+
+    log(f"Cleared {total_removed} items from Wix collection")
 
 
 # ────────────────── Sync logic ──────────────────
