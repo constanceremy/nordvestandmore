@@ -331,7 +331,7 @@ def wix_clear_collection():
         payload = {
             "query": {
                 "filter": {},
-                "paging": {"limit": 50, "offset": 0},
+                "paging": {"limit": 100, "offset": 0},
             }
         }
         r = requests.post(
