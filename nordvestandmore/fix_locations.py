@@ -60,6 +60,30 @@ LOCATION_FIXES: dict[str, str] = {
     "Thoravej 29, 2400 København NV": "Thoravej 29",
     # KK Bibliotek
     "BIBLIOTEKET Rentemestervej, Rentemestervej 76, 2400 København NV": "Biblioteket Rentemestervej",
+    # Ansgarkirken
+    "Ansgarkirken, Sallingvej 55, 2720 Vanløse": "Ansgarkirken",
+    "Ansgarkirken, Sallingvej 55, 2720 København NV": "Ansgarkirken",
+    # Grundtvigs Kirke
+    "Grundtvigs Kirke, På Bjerget 14B, 2400 København NV": "Grundtvigs Kirke",
+    "Grundtvigskirken, På Bjerget 14B, 2400 København NV": "Grundtvigs Kirke",
+    # Ungdomshuset
+    "Ungdomshuset, Dortheavej 61, 2400 København NV": "Ungdomshuset",
+    "Ungdomshuset D61, Dortheavej 61, 2400 København NV": "Ungdomshuset",
+    # Rört
+    "Rört, Lygten 33, 2400 København NV": "Rört",
+    "RÖRT, Lygten 33, 2400 København NV": "Rört",
+    # Goldschmidts Musikakademi
+    "Goldschmidts Musikakademi, Helga Larsens Plads 2, 2400 København NV": "Goldschmidts Musikakademi",
+    # Dave's
+    "Dave's, Frederikssundsvej 21, 2400 København NV": "Dave's",
+    # Lygten Station
+    "Lygten Station, Lygten 2, 2400 København NV": "Lygten Station",
+    # Tribeca
+    "Tribeca Beer & Pizza Lab, Frederikssundsvej 31, 2400 København NV": "Tribeca",
+    # Gamma NV
+    "Gamma NV, Rentemestervej 67, 2400 København NV": "Gamma NV",
+    # Dorthea's Bar
+    "Dorthea's Bar, Dortheavej 4, 2400 København NV": "Dorthea's Bar",
 }
 
 # Also fix locations that have sub-venue + full address (e.g. "Dansekapellet, Thoravej 29, 2400 København NV")
@@ -72,11 +96,29 @@ ADDRESS_SUFFIXES = [
     ", Rentemestervej 57, 2400 København NV",
     ", Rentemestervej 76, 2400 København NV",
     ", Lygten 39, 2400 København NV",
+    ", Lygten 33, 2400 København NV",
+    ", Lygten 2, 2400 København NV",
     ", Hejrevej 30, 2400 København NV",
     ", Bispeengen 20, 2000 Frederiksberg",
     ", Frederikssundsvej 45, 2400 København NV",
+    ", Frederikssundsvej 31, 2400 København NV",
+    ", Frederikssundsvej 21, 2400 København NV",
     ", Gammel Jernbanevej 7, 2500 Valby",
     ", Engsvinget 55, 2400 København NV",
+    ", Sallingvej 55, 2720 Vanløse",
+    ", Sallingvej 55, 2720 København NV",
+    ", På Bjerget 14B, 2400 København NV",
+    ", Dortheavej 61, 2400 København NV",
+    ", Dortheavej 4, 2400 København NV",
+    ", Helga Larsens Plads 2, 2400 København NV",
+    ", Landsdommervej 35, 2400 København NV",
+    ", Rentemestervej 67, 2400 København NV",
+    # Generic Copenhagen suffixes (catch-all for any venue we missed)
+    ", 2400 København NV",
+    ", 2400 Copenhagen NV",
+    ", Copenhagen, Denmark",
+    ", København, Denmark",
+    ", Denmark",
 ]
 
 

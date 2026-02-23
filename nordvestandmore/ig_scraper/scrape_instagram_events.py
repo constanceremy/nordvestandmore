@@ -40,6 +40,7 @@ from dedup import load_source_mapping, find_duplicate
 from auto_tag import classify_event, is_not_event, is_deal, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
 from deals_db import push_to_deals_db
+from fix_locations import clean_location
 
 # -------------------- CONFIG --------------------
 SLUG = "INSTAGRAM"
@@ -402,7 +403,9 @@ def to_12h(time_24: str) -> str | None:
 # -------------------- Notion --------------------
 def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
     """
-    Build dedup index: "URL|Name|StartDate" -> page_id.
+    Build dedup index: "URL|StartDate" -> page_id.
+    Uses URL + date only (NOT event name) because Gemini may produce
+    slightly different names each run, causing false dedup misses.
     Also returns a flat list of entry dicts for cross-platform fuzzy matching.
     """
     key_to_page: dict[str, str] = {}
@@ -427,7 +430,8 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
             start_date = date_obj["start"] if date_obj else ""
             source_parts = props.get("Source", {}).get("rich_text", [])
             source = source_parts[0]["text"]["content"] if source_parts else ""
-            key = f"{url_val}|{name}|{start_date}"
+            # Dedup key: URL + date (no name — Gemini is non-deterministic)
+            key = f"{url_val}|{start_date}"
             if url_val:
                 key_to_page[key] = page["id"]
             all_entries.append({
@@ -448,8 +452,14 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
     return key_to_page, all_entries
 
 
-def build_notion_props(ev: dict) -> dict:
-    """Build Notion properties using the unified column schema."""
+def build_notion_props(ev: dict, is_update: bool = False) -> dict:
+    """Build Notion properties using the unified column schema.
+
+    Args:
+        ev: event dict with scraped data
+        is_update: if True, skip user-editable fields (Tags, Location,
+                   Description) so manual corrections in Notion are preserved.
+    """
     props = {}
 
     # Name (title)
@@ -480,8 +490,8 @@ def build_notion_props(ev: dict) -> dict:
             "rich_text": [{"text": {"content": ev["end_time_disp"]}}]
         }
 
-    # Location
-    if ev.get("location"):
+    # Location — only set on create, preserve manual edits on update
+    if ev.get("location") and not is_update:
         props["Location"] = {
             "rich_text": [{"text": {"content": ev["location"][:2000]}}]
         }
@@ -502,8 +512,8 @@ def build_notion_props(ev: dict) -> dict:
             "rich_text": [{"text": {"content": ev["organizer"][:2000]}}]
         }
 
-    # Description (text)
-    if ev.get("description"):
+    # Description — only set on create, preserve manual edits on update
+    if ev.get("description") and not is_update:
         props["Description"] = {
             "rich_text": [{"text": {"content": ev["description"][:2000]}}]
         }
@@ -524,8 +534,8 @@ def build_notion_props(ev: dict) -> dict:
             "rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]
         }
 
-    # Tag (select) — auto-classified event category
-    if ev.get("tag"):
+    # Tag (select) — only set on create, preserve manual edits on update
+    if ev.get("tag") and not is_update:
         props["Tags"] = {"select": {"name": ev["tag"]}}
 
     # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
@@ -538,8 +548,8 @@ def build_notion_props(ev: dict) -> dict:
 
 
 def make_dedup_key(ev: dict) -> str:
-    """Build a deduplication key: URL + event name + date."""
-    return f"{ev.get('url', '')}|{ev.get('event_name', '')}|{ev.get('start_date', '')}"
+    """Build a deduplication key: URL + date (no name — Gemini is non-deterministic)."""
+    return f"{ev.get('url', '')}|{ev.get('start_date', '')}"
 
 
 def notion_create(ev: dict):
@@ -559,7 +569,7 @@ def notion_create(ev: dict):
 
 
 def notion_update(page_id: str, ev: dict):
-    payload = {"properties": build_notion_props(ev)}
+    payload = {"properties": build_notion_props(ev, is_update=True)}
     r = requests.patch(
         f"{NOTION_API}/pages/{page_id}",
         headers=NOTION_HEADERS,
@@ -731,6 +741,10 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 "kapernaumskirken": "Kapernaumskirken",
             }
             location = _DEFAULT_LOCATIONS.get(account.lower()) or event_data.get("location")
+            # Normalize full addresses to venue names
+            cleaned = clean_location(location) if location else None
+            if cleaned:
+                location = cleaned
 
             ev = {
                 "event_name": event_data.get("event_name"),
@@ -780,6 +794,17 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
 
             dedup_key = make_dedup_key(ev)
             page_id = existing.get(dedup_key)
+
+            if DEBUG and not page_id:
+                # Log dedup miss to help diagnose duplicate creation
+                log(f"    🔍 Dedup miss: key={dedup_key[:120]}")
+                # Check if a similar URL exists in existing (partial match)
+                url_prefix = ev.get("url", "")
+                similar = [k for k in existing if url_prefix in k]
+                if similar:
+                    log(f"    🔍 Similar keys in DB: {len(similar)} match(es)")
+                    for s in similar[:3]:
+                        log(f"        {s[:120]}")
 
             if page_id:
                 r = notion_update(page_id, ev)

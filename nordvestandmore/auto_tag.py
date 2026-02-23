@@ -27,7 +27,19 @@ from pathlib import Path
 # First match wins — order matters!
 
 TAG_RULES: list[dict] = [
-    # ── Book Club / Literature ──  (before Sauna so "Rört Book Club" → Book Club)
+    # ═══════════════════════════════════════════════════════════════════
+    # PRIORITY ORDER — first match wins.
+    #
+    # KEY DESIGN DECISIONS (learned from manual corrections in Notion):
+    #   1. Kids & Family is HIGH — if children are involved, that wins.
+    #   2. Spirituality is LOW — church events are usually something more
+    #      specific (Music, Yoga, Craft, Dinner, etc.).
+    #   3. Yoga & Mindfulness is ABOVE Workshop — "sound bath" = Yoga.
+    #   4. Craft Gathering is ABOVE Workshop — "All Crafts" = Craft.
+    #   5. except_when rules handle edge cases (e.g. comedy + concert → Music).
+    # ═══════════════════════════════════════════════════════════════════
+
+    # ── Book Club / Literature ──
     {
         "tag": "Book Club",
         "keywords": [
@@ -35,35 +47,65 @@ TAG_RULES: list[dict] = [
             "boghandel", "boglancering", "sci-fi bogklub",
         ],
         "patterns": [r"\bBOGKLUB\b", r"\bBOOK\s+CLUB\b"],
+        # "Seminar og boglancering" → Talk, not Book Club
+        "except_when": [
+            {"keywords": ["seminar"], "redirect": "Talk & Lecture"},
+        ],
     },
-    # ── Singing / Choir ──  (before Spirituality so "Fællessang" → Singing)
+
+    # ── Kids / Family ──  (HIGH priority — anything for children wins)
+    #
+    # Learned: "Skak for børn" → Kids, not Games.  "Barselskor" → Kids,
+    # not Singing.  "Monster Teaterskole" → Kids, not Music.
+    # "Hop, Snur og Flyv!" (familiedans) → Kids, not Workshop.
+    # "R E S O N O" (kids music) → Kids, not Dance.
+    {
+        "tag": "Kids & Family",
+        "keywords": [
+            "børn", "baby", "barsel", "barsels",
+            "barselskor", "barselskoret",
+            "familie", "familiedans", "familiedag",
+            "familieforlöb", "familieforløb", "familieyoga",
+            "ungdomsgård", "fritidsklub", "teaterskole",
+            "children", "kids", "playroom", "legestue",
+            "børnekultur", "musikleg", "babysalmesang",
+            "hop, snur og flyv",
+        ],
+        "patterns": [
+            r"\b(?:[0-9]|1[0-4])\s*-\s*(?:[0-9]|1[0-4])\s*år\b",   # "4-6 år" (child age ranges only, max 14)
+            r"\b(?:[0-9]|1[0-2])\s*(?:year|år)\b",                  # "5 år", "3 year" (child ages only, max 12)
+            r"\bR\s*E\s*S\s*O\s*N\s*O\b",                           # "R E S O N O"
+        ],
+        # "Fællesspisning" descriptions often mention "børn 35kr" for
+        # kids pricing — but the event IS a dinner, not a kids event.
+        "except_when": [
+            {"keywords": ["fællesspisning"], "redirect": "Community Dinner"},
+        ],
+    },
+
+    # ── Singing / Choir ──
+    #
+    # Note: "barselskor" and "barselskoret" are in Kids & Family above,
+    # so maternity choirs correctly tag as Kids & Family.
     {
         "tag": "Singing",
         "keywords": [
             "fællessang", "kor ", "koret", "damekor",
-            "højskolesang", "barselskor", "barselskoret",
+            "højskolesang",
             "tune in! - koret", "syng i flok",
         ],
         "patterns": [r"\bKORET\b", r"\bFÆLLESSANG\b"],
     },
-    # ── Volunteering ──  (before Spirituality so "sogneindsamling" → Volunteering)
+
+    # ── Volunteering ──
     {
         "tag": "Volunteering",
         "keywords": [
-            "sogneindsamling", "indsamling",
             "planlægningsmøde",
         ],
         "patterns": [],
     },
-    # ── Church / Spiritual ──  (before Drinks so "G&T-natkirke" → Church)
-    {
-        "tag": "Spirituality",
-        "keywords": [
-            "natkirke", "kirke", "gudstjeneste", "aftensang",
-            "café rummet", "café larsen", "godnathistorier",
-        ],
-        "patterns": [r"\bNATKIRKE\b", r"\bKIRKE\b"],
-    },
+
     # ── Sauna & Wellness ──
     {
         "tag": "Sauna",
@@ -73,11 +115,15 @@ TAG_RULES: list[dict] = [
         ],
         "patterns": [r"\bSAUNA\b"],
         # Note: "Rört" is a venue that hosts many event types (yoga, book
-        # club, kirtan, etc.) — NOT just sauna. Only explicit "sauna"
-        # keywords trigger this tag.
-        # Exception: if "dance" is also present → Festival & Party instead.
-        "except_when": {"keywords": ["dance"], "redirect": "Festival & Party"},
+        # club, kirtan, etc.) — NOT just sauna.
+        "except_when": [
+            {"keywords": ["dance"], "redirect": "Festival & Party"},
+            {"keywords": ["grindcore", "punk", "metal", "doom", "sludge",
+                          "powerviolence", "hardcore"], "redirect": "Music"},
+            {"keywords": ["kursus", "course"], "redirect": "Workshop"},
+        ],
     },
+
     # ── Quiz / Banko / Bingo ──
     {
         "tag": "Quiz / Banko / Bingo",
@@ -87,15 +133,19 @@ TAG_RULES: list[dict] = [
         ],
         "patterns": [r"\bQUIZ\b", r"\bBANKO\b", r"\bBINGO\b"],
     },
+
     # ── Board Games / Chess ──
+    #
+    # Note: "Skak for børn" is caught by Kids & Family above.
     {
         "tag": "Games",
         "keywords": [
             "brætspil", "board game", "boardgame",
-            "skak ", "chess", "skak for børn",
+            "skak ", "chess",
         ],
         "patterns": [r"\bSKAK\b"],
     },
+
     # ── Comedy / Improv ──
     {
         "tag": "Comedy",
@@ -107,7 +157,14 @@ TAG_RULES: list[dict] = [
             "mikael wulff", "mikkel klint", "jason rouse",
         ],
         "patterns": [r"\bIMPROV\b", r"\bCOMEDY\b"],
+        # "Åh Buster + Cecilie Elise | URBAN Sessions" — humor in desc
+        # but it's a concert → redirect to Music
+        "except_when": [
+            {"keywords": ["concert", "koncert", "sessions",
+                          "live music", "urban sessions"], "redirect": "Music"},
+        ],
     },
+
     # ── Film / Screening ──
     {
         "tag": "Film",
@@ -117,40 +174,44 @@ TAG_RULES: list[dict] = [
         ],
         "patterns": [r"\bROBOCLUB\b", r"CPH:DOX"],
     },
+
     # ── Market / Sale ──
+    #
+    # Note: "Rose Tuesday" moved to Drinks & Bar.
     {
         "tag": "Market",
         "keywords": [
             "flea market", "loppemarked", "stock & sample",
-            "sample sale", "stock sale", "rose tuesday",
+            "sample sale", "stock sale",
             "bazar",
         ],
         "patterns": [r"\bFLEA\s+MARKET\b"],
     },
-    # ── Craft Gathering ──  (social craft meetups, before Workshop)
+
+    # ── Craft Gathering ──  (social craft meetups — BEFORE Workshop)
+    #
+    # Learned: "Neighbor Sunday" at MakerSpace → Craft Gathering.
+    # "All Crafts Are Beautiful" → Craft Gathering, not Workshop.
+    # "Strik Og Hør" → Craft Gathering (once Spirituality is lower).
     {
         "tag": "Craft Gathering",
         "keywords": [
             "strikkeklub", "nørklecafé", "mandagshåndværk",
-            "strik og hør", "broderi", "fiks og færdig",
-            "farv garn", "papirblomster", "blækmaling", "crepepapir",
+            "strik og hør", "fiks og færdig",
+            "farv garn",
+            "neighbor sunday", "all crafts",
         ],
         "patterns": [],
-    },
-    # ── Workshop / Craft ──
-    {
-        "tag": "Workshop",
-        "keywords": [
-            "workshop", "kursus", "course", "craft", "masterclass",
-            "bootcamp", "intro", "serigrafi", "monotypi", "grafik",
-            "linoleum", "tryk",
-            "surdejsbrød", "croissant",
-            "facilitator uddannelse",
-            "drawing", "painting", "sketching", "expressive form",
+        # Structured courses with craft keywords → Workshop
+        "except_when": [
+            {"keywords": ["kursus", "course"], "redirect": "Workshop"},
         ],
-        "patterns": [r"\bWORKSHOP\b", r"\bKURSUS\b", r"\bMASTERCLASS\b"],
     },
-    # ── Yoga / Meditation / Breathwork ──
+
+    # ── Yoga / Meditation / Breathwork ──  (BEFORE Workshop)
+    #
+    # Learned: "Sound bath" / "Aerial Yoga" = Yoga, not Workshop.
+    # "Gravidcirkel" / "Mødre group" = Yoga, not Spirituality.
     {
         "tag": "Yoga & Mindfulness",
         "keywords": [
@@ -159,21 +220,55 @@ TAG_RULES: list[dict] = [
             "kirtan", "satsang", "retræte", "retreat",
             "tantra", "embodied", "ceremony",
             "shamanist", "trommerejse", "sundhed",
+            "gravidcirkel", "mødre",
         ],
         "patterns": [r"\bYOGA\b", r"\bYIN\b"],
+        # Intensive courses / teacher training / education → Workshop
+        "except_when": [
+            {"keywords": ["fordybelse", "teacher training",
+                          "forløb", "forlöb", "uddannelse"], "redirect": "Workshop"},
+        ],
     },
+
+    # ── Workshop / Craft ──
+    #
+    # Learned: "Biomekanik" at Nordic Health House = Workshop, not Sport.
+    # "Papirblomster workshop" = Workshop (structured course).
+    {
+        "tag": "Workshop",
+        "keywords": [
+            "workshop", "kursus", "course", "craft", "masterclass",
+            "bootcamp", "intro", "serigrafi", "monotypi", "grafik",
+            "linoleum", "tryk",
+            "biomekanik", "træningsforløb",
+            "papirblomster", "blækmaling", "crepepapir", "broderi",
+            "surdejsbrød", "croissant",
+            "facilitator uddannelse",
+            "drawing", "painting", "sketching", "expressive form",
+        ],
+        "patterns": [r"\bWORKSHOP\b", r"\bKURSUS\b", r"\bMASTERCLASS\b"],
+        # Dance workshops at Dansekapellet → Dance & Performance
+        "except_when": [
+            {"keywords": ["koreografi", "dansekapellet",
+                          "dansekompagni"], "redirect": "Dance & Performance"},
+        ],
+    },
+
     # ── Sport / Running / Exercise ──
+    #
+    # Note: "biomekanik" moved to Workshop (Nordic Health House courses).
     {
         "tag": "Sport & Run",
         "keywords": [
             "run ", "running", "løbeklub", "løbetur", "løbehold",
             "social run", "workout",
-            "fitness", "træning", "biomekanik", "body & mind",
+            "fitness", "træning", "body & mind",
             "run club", "3k run",
         ],
         "patterns": [r"\bRUN\b(?!\s+(?:BY|AT|IN|ON|THE))", r"\bløb\b"],
     },
-    # ── Food Special ──  (before Community Dinner so "Fry-Day" → Food Special)
+
+    # ── Food Special ──
     {
         "tag": "Food Special",
         "keywords": [
@@ -181,18 +276,23 @@ TAG_RULES: list[dict] = [
         ],
         "patterns": [r"\bFRY-DAY\b"],
     },
+
     # ── Community Dinner / Food ──
+    #
+    # Learned: "Gud & Burger" / "Madklubben" = Community Dinner
+    # (now correctly matched since Spirituality is lower).
     {
         "tag": "Community Dinner",
         "keywords": [
             "fællesspisning", "middag for alle", "community breakfast",
             "community dinner", "potluck", "peoples kitchen",
-            "supperclub", "supper club", "madklub",
+            "supperclub", "supper club", "madklub", "madklubben",
             "frokost", "madspild", "stories on plates",
             "gud & burger",
         ],
         "patterns": [],
     },
+
     # ── Speed Dating ──
     {
         "tag": "Speed Dating",
@@ -201,7 +301,10 @@ TAG_RULES: list[dict] = [
         ],
         "patterns": [r"\bSPEED\s*DATING\b"],
     },
+
     # ── Drinks / Happy Hour ──
+    #
+    # Learned: "Rose Tuesday" = Drinks & Bar, not Market.
     {
         "tag": "Drinks & Bar",
         "keywords": [
@@ -209,30 +312,36 @@ TAG_RULES: list[dict] = [
             "behind the brews", "irish coffee", "brew hang",
             "tirsdagsdeals", "putty day",
             "single (hops)", "valentine",
+            "rose tuesday",
         ],
         "patterns": [r"\bHAPPY\s+HOUR\b"],
     },
+
     # ── Music / Concert / DJ ──
+    #
+    # Note: removed "urban 13" (it's a venue, not a music indicator).
+    # Added "nordvest klassisk".
     {
         "tag": "Music",
         "keywords": [
             "concert", "koncert", "dj ", "live music", "album release",
             "jazz", "punk", "gig", "metal", "hardcore", "doom",
-            "soooundsss", "urban sessions", "urban 13", "sessions",
+            "soooundsss", "urban sessions", "sessions",
             "musik café", "huskoncert", "orgel", "kammerkonc",
             "powerviolence", "grindcore", "sludge", "moshpit",
             "shuffle", "karaoke", "schwanengesang",
             "show in ungdomshuset",
             "bands of tomorrow", "all tribes are welcome",
-            "lament",
+            "lament", "nordvest klassisk",
         ],
         "patterns": [
             r"\bDJ\b", r"\bD\.J\.", r"\bGIG\b", r"URBAN\s+Sessions",
-            r"URBAN\s+13", r"\bKONCERT\b", r"\bPUNK\b",
+            r"\bKONCERT\b", r"\bPUNK\b",
             # Artist lineup pattern: "NAME + NAME" (common in music events)
             r"^[A-ZÆØÅa-zæøå\$][\w\.\$\s]*\s\+\s",
         ],
     },
+
     # ── Dance / Performance / Theater ──
     {
         "tag": "Dance & Performance",
@@ -240,10 +349,14 @@ TAG_RULES: list[dict] = [
             "dans ", "dance", "ballet", "koreografi", "performance",
             "teater", "theater", "theatre", "forestilling",
             "akroyoga", "nattens syntese", "månen er af papir",
+            "dansekapellet",
         ],
         "patterns": [r"\bDANS\b", r"\bDANCE\b"],
     },
+
     # ── Art / Exhibition / Gallery ──
+    #
+    # Learned: "Offentlig rundvisning" = Art, not Spirituality.
     {
         "tag": "Art & Exhibition",
         "keywords": [
@@ -252,18 +365,7 @@ TAG_RULES: list[dict] = [
         ],
         "patterns": [r"\bFERNISERING\b"],
     },
-    # ── Kids / Family ──
-    {
-        "tag": "Kids & Family",
-        "keywords": [
-            "børn", "baby", "barsel", "barsels", "familie",
-            "ungdomsgård", "fritidsklub", "teaterskole",
-            "gravidcirkel", "mødre",
-            "children", "kids", "playroom", "legestue",
-            "børnekultur", "musikleg", "babysalmesang",
-        ],
-        "patterns": [r"\b\d+.?\d*\s*(?:year|år)\s*old"],
-    },
+
     # ── Talk / Lecture / Conference ──
     {
         "tag": "Talk & Lecture",
@@ -274,6 +376,7 @@ TAG_RULES: list[dict] = [
         ],
         "patterns": [r"\bFOREDRAG\b"],
     },
+
     # ── Festival / Party ──
     {
         "tag": "Festival & Party",
@@ -284,16 +387,37 @@ TAG_RULES: list[dict] = [
         ],
         "patterns": [r"\bFESTIVAL\b"],
     },
-    # ── Social Gathering ──
+
+    # ── Social Gathering ──  (ABOVE Spirituality so "Onsdagsklubben" at
+    # a church → Social Gathering, not Spirituality)
+    #
+    # Note: "Neighbor Sunday" moved to Craft Gathering.
     {
         "tag": "Social Gathering",
         "keywords": [
-            "neighbor sunday", "social", "gathering", "sharing circle",
+            "social", "gathering", "sharing circle",
             "onsdagsklubben", "sommerfest",
             "møde", "open hours",
             "demonstration",
         ],
         "patterns": [],
+    },
+
+    # ── Church / Spiritual ──  (LOWEST priority — most church events are
+    # something more specific: Music, Yoga, Craft, Dinner, etc.
+    # Only truly generic church events end up here.)
+    #
+    # Learned: "Koncert" at a church → Music.  "Strik Og Hør" → Craft.
+    # "Madklubben" at a church → Community Dinner.  "Yoga" at a church → Yoga.
+    # Only "Gudstjeneste", "Aftensang", "Natkirke" etc. should be Spirituality.
+    {
+        "tag": "Spirituality",
+        "keywords": [
+            "natkirke", "kirke", "gudstjeneste", "aftensang",
+            "café rummet", "café larsen", "godnathistorier",
+            "sogneindsamling",
+        ],
+        "patterns": [r"\bNATKIRKE\b", r"\bKIRKE\b"],
     },
 ]
 
@@ -509,17 +633,20 @@ def classify_event(
         if not matched:
             continue
 
-        # Check exceptions: if an "except_when" condition is met, redirect
+        # Check exceptions: if an "except_when" condition is met, redirect.
+        # Supports both a single dict and a list of dicts for multiple exceptions.
         exc = rule.get("except_when")
         if exc:
-            exc_hit = any(ek.lower() in combined for ek in exc.get("keywords", []))
-            if not exc_hit:
-                exc_hit = any(
-                    re.search(p, combined_raw, re.IGNORECASE)
-                    for p in exc.get("patterns", [])
-                )
-            if exc_hit:
-                return exc["redirect"]
+            exc_list = exc if isinstance(exc, list) else [exc]
+            for exc_rule in exc_list:
+                exc_hit = any(ek.lower() in combined for ek in exc_rule.get("keywords", []))
+                if not exc_hit:
+                    exc_hit = any(
+                        re.search(p, combined_raw, re.IGNORECASE)
+                        for p in exc_rule.get("patterns", [])
+                    )
+                if exc_hit:
+                    return exc_rule["redirect"]
 
         return rule["tag"]
 

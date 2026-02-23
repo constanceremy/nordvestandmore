@@ -31,6 +31,7 @@ from dedup import load_source_mapping, find_duplicate, load_fb_to_ig_map, _extra
 from auto_tag import classify_event, is_not_event, is_deal, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
 from deals_db import push_to_deals_db
+from fix_locations import clean_location
 
 # -------------------- CONFIG --------------------
 SLUG = "FACEBOOK"
@@ -830,8 +831,14 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
     return url_to_page, all_entries
 
 
-def build_notion_props(ev: dict) -> dict:
-    """Build Notion properties using the unified column schema."""
+def build_notion_props(ev: dict, is_update: bool = False) -> dict:
+    """Build Notion properties using the unified column schema.
+
+    Args:
+        ev: event dict with scraped data
+        is_update: if True, skip user-editable fields (Tags, Location,
+                   Description) so manual corrections in Notion are preserved.
+    """
     props = {}
 
     name = ev.get("event_name") or "Untitled Event"
@@ -856,7 +863,8 @@ def build_notion_props(ev: dict) -> dict:
             "rich_text": [{"text": {"content": ev["end_time_disp"]}}]
         }
 
-    if ev.get("location"):
+    # Location — only set on create, preserve manual edits on update
+    if ev.get("location") and not is_update:
         props["Location"] = {
             "rich_text": [{"text": {"content": ev["location"][:2000]}}]
         }
@@ -874,7 +882,8 @@ def build_notion_props(ev: dict) -> dict:
             "rich_text": [{"text": {"content": ev["organizer"][:2000]}}]
         }
 
-    if ev.get("description"):
+    # Description — only set on create, preserve manual edits on update
+    if ev.get("description") and not is_update:
         props["Description"] = {
             "rich_text": [{"text": {"content": ev["description"][:2000]}}]
         }
@@ -895,8 +904,8 @@ def build_notion_props(ev: dict) -> dict:
             "rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]
         }
 
-    # Tag (select) — auto-classified event category
-    if ev.get("tag"):
+    # Tag (select) — only set on create, preserve manual edits on update
+    if ev.get("tag") and not is_update:
         props["Tags"] = {"select": {"name": ev["tag"]}}
 
     # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
@@ -930,7 +939,7 @@ def notion_create(ev: dict):
 
 
 def notion_update(page_id: str, ev: dict):
-    payload = {"properties": build_notion_props(ev)}
+    payload = {"properties": build_notion_props(ev, is_update=True)}
     r = requests.patch(
         f"{NOTION_API}/pages/{page_id}",
         headers=NOTION_HEADERS,
@@ -1151,12 +1160,22 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
             ig_handle = fb_to_ig.get(fb_key) or fb_to_ig.get(page_name.lower())
 
             # Default locations for FB pages where venue = page itself
+            # Keys are the lowercased result of extract_page_name(fb_url)
             _FB_DEFAULT_LOCATIONS = {
                 "rabenssaloner": "Rabens Saloner",
                 "cafegazounv": "Cafe Gazou",
                 "lygtenstation": "Lygten Station",
+                "grundtvigs.kirke": "Grundtvigs Kirke",
+                "rortcph": "Rört",
+                "ungdomshusetd61": "Ungdomshuset",
+                "goldschmidtsakademi": "Goldschmidts Musikakademi",
+                "kapernaumskirken": "Kapernaumskirken",
             }
             location = _FB_DEFAULT_LOCATIONS.get(page_name.lower()) or event_data.get("location")
+            # Normalize full addresses to venue names (e.g. "Flere Fugle, Frederikssundsvej 35, 2400..." → "Flere Fugle")
+            cleaned = clean_location(location) if location else None
+            if cleaned:
+                location = cleaned
 
             ev = {
                 "event_name": event_data.get("event_name"),
@@ -1204,6 +1223,15 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
 
             dedup_key = make_dedup_key(ev)
             page_id = existing.get(dedup_key)
+
+            if DEBUG and not page_id:
+                # Log dedup miss to help diagnose duplicate creation
+                log(f"    🔍 Dedup miss: key={dedup_key[:100]}")
+                # Check if a similar URL exists in existing (partial match)
+                base_url = dedup_key.split("?")[0]
+                similar = [k for k in existing if base_url in k]
+                if similar:
+                    log(f"    🔍 Similar keys in DB: {similar[:3]}")
 
             if page_id:
                 r = notion_update(page_id, ev)
