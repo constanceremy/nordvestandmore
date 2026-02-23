@@ -36,6 +36,9 @@ yarn-error.log*
 # Facebook session cookies (sensitive)
 fb_cookies.json
 
+# Scraper runtime artifacts
+scraper_summary.md
+
 # vercel
 .vercel
 

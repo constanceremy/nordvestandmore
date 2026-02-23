@@ -143,14 +143,15 @@ def read_notion_events() -> list[dict]:
             source_type = _extract_text(props.get("Source Type", {}), "select")
             event_link = _extract_text(props.get("Event Link", {}), "url")
             missing_fields = _extract_text(props.get("Missing fields", {}), "rich_text")
+            review_notes = _extract_text(props.get("Review Notes", {}), "rich_text")
             reviewed = _extract_text(props.get("Reviewed Missing Fields", {}), "checkbox")
 
             # Skip events with no name or no date
             if not event_name or not start_date:
                 continue
 
-            # Skip events with missing fields unless they've been reviewed
-            if missing_fields and not reviewed:
+            # Skip events with missing fields or review notes unless reviewed
+            if (missing_fields or review_notes) and not reviewed:
                 continue
 
             # Skip past events (before today)

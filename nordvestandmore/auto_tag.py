@@ -16,7 +16,9 @@ To see which tag an event would get:
   python auto_tag.py "Event Name" "optional description"
 """
 
+import csv
 import re
+from pathlib import Path
 
 # ────────────────── Tag definitions ──────────────────
 # Each rule: { "tag": str, "keywords": [str], "patterns": [regex_str] }
@@ -404,6 +406,72 @@ def is_excluded_location(location: str) -> bool:
         if excl in loc_lower:
             return True
     return False
+
+
+# ── Known Nordvest locations → flag unknown ones for review ──
+
+def _load_known_nv_locations() -> set[str]:
+    """Load known NV venue/org names from source_mapping.csv + extras."""
+    locations: set[str] = set()
+
+    csv_path = Path(__file__).resolve().parent / "source_mapping.csv"
+    if csv_path.exists():
+        with open(csv_path, encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                name = row.get("name", "").strip()
+                if name:
+                    locations.add(name.lower())
+
+    # Additional venue names / aliases not in the CSV
+    locations.update({
+        "café rummet", "flok kantine", "fovl nv",
+        "sauna 85", "biblioteket rentemestervej",
+        "tekno eatery", "engsvinget 55", "thoravej 29",
+        "pool pub", "makerspace nv", "repair cafe",
+        "dorthea's bar", "dortheas", "dave's", "daves",
+        "cafe gazou", "rört", "rort",
+        "storm b cafe", "storm b café",
+        "sokkelundlille", "utterslev torv",
+        "københavnstrup", "flok",
+        "gamma nv", "aftenskolernes hus",
+    })
+
+    return locations
+
+
+_KNOWN_NV_LOCATIONS: set[str] = _load_known_nv_locations()
+
+# NV area indicators — if any appears in the location string, it's NV
+_NV_AREA_INDICATORS = [
+    "2400", "nordvest", "københavn nv",
+    "bispebjerg", "bellahøj", "lygten",
+    "rentemestervej", "frederikssundsvej", "thoravej",
+    "hejrevej", "engsvinget", "birkedommervej",
+]
+
+
+def is_unknown_location(location: str) -> bool:
+    """Return True if the location is NOT recognized as a known Nordvest venue.
+
+    Empty / blank locations are NOT flagged — those are caught by the
+    "Missing fields" formula in Notion.
+    """
+    if not location or not location.strip():
+        return False
+
+    loc_lower = location.lower().strip()
+
+    # Check NV area indicators (addresses clearly in the area)
+    for indicator in _NV_AREA_INDICATORS:
+        if indicator in loc_lower:
+            return False
+
+    # Check known location names (substring match in either direction)
+    for known in _KNOWN_NV_LOCATIONS:
+        if known in loc_lower or loc_lower in known:
+            return False
+
+    return True
 
 
 def classify_event(
