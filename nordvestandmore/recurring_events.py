@@ -129,9 +129,9 @@ RECURRING_EVENTS = [
     {
         "id": "autopoul_rosetuesday",
         "event_name": "Rose Tuesday",
-        "organizer": "Auto Poul",
+        "organizer": "Autopoul",
         "ig_handle": "@autopoul",
-        "location": "Auto Poul",
+        "location": "Autopoul",
         "url": "https://www.instagram.com/autopoul/",
         "start_time": "12:00",
         "end_time": None,

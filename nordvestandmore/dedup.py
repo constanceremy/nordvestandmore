@@ -2,6 +2,29 @@
 Cross-platform duplicate detection for NordVest & More scrapers.
 Compares new events against existing Notion entries to flag likely duplicates.
 Uses source_mapping.csv to know which IG handles and FB pages are the same venue.
+
+──────────────────────────────────────────────────────────────────────
+FUTURE: Automatic duplicate resolution
+──────────────────────────────────────────────────────────────────────
+When we implement auto-dedup (removing duplicates instead of just flagging),
+follow these rules:
+
+1. SOURCE PRIORITY (keep the higher-priority link):
+       Website  >  Facebook  >  Instagram
+   - Websites are accessible to everyone (no login needed).
+   - Facebook events have structured data (dates, times, locations).
+   - Instagram posts have the least structured info.
+
+2. MERGE, DON'T JUST DELETE:
+   When removing the lower-priority duplicate, first merge its unique
+   metadata INTO the winning (higher-priority) entry. In particular:
+   - Tagged accounts ("To tag" field) — only available from Instagram
+   - Instagram handle ("Instagramhandle" field)
+   - Gemini-extracted description, organizer, or other enrichment
+   - Any fields the winning entry is missing
+
+   Goal: best link + richest combined metadata in one entry.
+──────────────────────────────────────────────────────────────────────
 """
 import csv
 import os
