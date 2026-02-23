@@ -28,7 +28,7 @@ import requests
 # Add parent dir to path for shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from dedup import load_source_mapping, find_duplicate, load_fb_to_ig_map, _extract_fb_id
-from auto_tag import classify_event, is_not_event, is_deal, should_skip_entirely, is_excluded_location
+from auto_tag import classify_event, is_not_event, is_deal, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
 from deals_db import push_to_deals_db
 
@@ -899,6 +899,12 @@ def build_notion_props(ev: dict) -> dict:
     if ev.get("tag"):
         props["Tags"] = {"select": {"name": ev["tag"]}}
 
+    # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
+    if ev.get("review_notes"):
+        props["Review Notes"] = {
+            "rich_text": [{"text": {"content": ev["review_notes"][:2000]}}]
+        }
+
     return props
 
 
@@ -1176,6 +1182,11 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
             if is_excluded_location(ev.get("location", "")):
                 log(f"  Skipping excluded location: {ev.get('event_name')} @ {ev.get('location')}")
                 continue
+
+            # Flag unknown locations for manual review
+            if is_unknown_location(ev.get("location", "")):
+                ev["review_notes"] = f"⚠️ Unknown location: {ev['location']}"
+                log(f"  ⚠️ Unknown location flagged for review: {ev.get('event_name')} @ {ev.get('location')}")
 
             dupe = find_duplicate(
                 ev.get("event_name", ""),

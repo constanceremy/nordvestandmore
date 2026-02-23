@@ -2,9 +2,8 @@ name: Sync to Wix
 
 on:
   schedule:
-    # Runs daily at 22:30 UTC = ~12:30 AM Copenhagen (summer) / ~11:30 PM (winter)
-    # 3 hours after the scraper starts at 19:30 UTC
-    - cron: "30 22 * * *"
+    # Runs daily at 03:00 UTC = ~4:00 AM Copenhagen (winter) / ~5:00 AM (summer)
+    - cron: "0 3 * * *"
   workflow_dispatch:  # Manual trigger from GitHub UI
     inputs:
       dry_run:
@@ -47,15 +46,16 @@ jobs:
           fi
 
       - name: Send failure notification
-        if: failure()
+        if: failure() || cancelled()
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           if [ -n "$NTFY_TOPIC" ]; then
+            STATUS="${{ job.status }}"
             curl -s \
-              -H "Title: NV&More Wix Sync Failed" \
+              -H "Title: NV&More Wix Sync ${STATUS}" \
               -H "Priority: high" \
               -H "Tags: warning" \
-              -d "Notion → Wix sync failed. Check GitHub Actions: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              -d "Notion → Wix sync ${STATUS}. Check GitHub Actions: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
               "https://ntfy.sh/$NTFY_TOPIC"
           fi

@@ -37,7 +37,7 @@ import requests
 # Add parent dir to path for shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from dedup import load_source_mapping, find_duplicate
-from auto_tag import classify_event, is_not_event, is_deal, should_skip_entirely, is_excluded_location
+from auto_tag import classify_event, is_not_event, is_deal, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
 from deals_db import push_to_deals_db
 
@@ -100,8 +100,13 @@ gemini_limiter = RateLimiter(max_calls=GEMINI_RPM_LIMIT, period=60.0)
 _logged_in = False
 
 
-def setup_instaloader() -> instaloader.Instaloader:
-    """Set up instaloader WITHOUT login (faster, no risk of being flagged)."""
+def setup_instaloader(login_first: bool = False) -> instaloader.Instaloader:
+    """Set up instaloader.
+
+    Args:
+        login_first: If True and credentials are available, log in immediately
+                     (recommended for CI/cron where rate limits are strict).
+    """
     L = instaloader.Instaloader(
         download_videos=False,
         download_video_thumbnails=False,
@@ -110,8 +115,15 @@ def setup_instaloader() -> instaloader.Instaloader:
         save_metadata=False,
         compress_json=False,
         post_metadata_txt_pattern="",
+        max_connection_attempts=1,  # Don't retry on 429 (would block 30 min)
+        request_timeout=30,
     )
-    log("Starting without login (public posts only).")
+
+    if login_first and IG_USERNAME and IG_PASSWORD:
+        try_login(L)
+    else:
+        log("Starting without login (public posts only).")
+
     return L
 
 
@@ -516,6 +528,12 @@ def build_notion_props(ev: dict) -> dict:
     if ev.get("tag"):
         props["Tags"] = {"select": {"name": ev["tag"]}}
 
+    # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
+    if ev.get("review_notes"):
+        props["Review Notes"] = {
+            "rich_text": [{"text": {"content": ev["review_notes"][:2000]}}]
+        }
+
     return props
 
 
@@ -739,6 +757,11 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
             if is_excluded_location(ev.get("location", "")):
                 log(f"  Skipping excluded location: {ev.get('event_name')} @ {ev.get('location')}")
                 continue
+
+            # Flag unknown locations for manual review
+            if is_unknown_location(ev.get("location", "")):
+                ev["review_notes"] = f"⚠️ Unknown location: {ev['location']}"
+                log(f"  ⚠️ Unknown location flagged for review: {ev.get('event_name')} @ {ev.get('location')}")
 
             # Check for cross-platform duplicate
             dupe = find_duplicate(

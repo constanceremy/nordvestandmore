@@ -45,24 +45,36 @@ jobs:
         working-directory: nordvestandmore
         run: python3 run_scraper.py all --auto
 
+      - name: Post run summary
+        if: always()
+        run: |
+          if [ -f nordvestandmore/scraper_summary.md ]; then
+            cat nordvestandmore/scraper_summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "⚠️ No scraper summary file found (scraper may have crashed before finishing)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload log on failure
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: scraper-log-${{ github.run_id }}
-          path: nordvestandmore/logs/
+          path: |
+            nordvestandmore/logs/
+            nordvestandmore/scraper_summary.md
           retention-days: 14
 
       - name: Send failure notification
-        if: failure()
+        if: failure() || cancelled()
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           if [ -n "$NTFY_TOPIC" ]; then
+            STATUS="${{ job.status }}"
             curl -s \
-              -H "Title: NV&More Scraper Failed" \
+              -H "Title: NV&More Scraper ${STATUS}" \
               -H "Priority: high" \
               -H "Tags: warning" \
-              -d "The daily event scraper failed. Check GitHub Actions for details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              -d "The daily event scraper ${STATUS}. Check GitHub Actions for details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
               "https://ntfy.sh/$NTFY_TOPIC"
           fi

@@ -29,7 +29,7 @@ from bs4 import BeautifulSoup
 # Add parent dir to path for dedup import
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dedup import load_source_mapping, find_duplicate, similarity
-from auto_tag import classify_event, is_not_event, should_skip_entirely, is_excluded_location
+from auto_tag import classify_event, is_not_event, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
 
 # ────────────────── Config ──────────────────
@@ -3210,6 +3210,12 @@ def build_notion_props(ev: dict) -> dict:
     if ev.get("tag"):
         props["Tags"] = {"select": {"name": ev["tag"]}}
 
+    # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
+    if ev.get("review_notes"):
+        props["Review Notes"] = {
+            "rich_text": [{"text": {"content": ev["review_notes"][:2000]}}]
+        }
+
     return props
 
 
@@ -3383,6 +3389,11 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
         if is_excluded_location(ev.get("location", "")):
             log(f"  Skipping excluded location: {ev.get('event_name')} @ {ev.get('location')}")
             continue
+
+        # Flag unknown locations for manual review
+        if is_unknown_location(ev.get("location", "")):
+            ev["review_notes"] = f"⚠️ Unknown location: {ev['location']}"
+            log(f"  ⚠️ Unknown location flagged for review: {ev.get('event_name')} @ {ev.get('location')}")
 
         # If flagged from cross-post fallback, mark as possible duplicate
         if event_data.get("_flag_duplicate"):
