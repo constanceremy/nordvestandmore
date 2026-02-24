@@ -865,14 +865,23 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
 
 # -------------------- MAIN (standalone) --------------------
 def main():
+    """
+    Usage:
+        python3 scrape_instagram_events.py                  # scrape all from accounts.txt
+        python3 scrape_instagram_events.py handle1 handle2  # scrape specific accounts
+    """
     if not NOTION_TOKEN or not NOTION_DB:
         sys.exit("Missing NOTION_TOKEN or NOTION_DATABASE_ID")
     if not GEMINI_API_KEY:
         sys.exit("Missing GEMINI_API_KEY")
 
-    accounts = load_accounts()
+    # Accept account names as args, or fall back to accounts.txt
+    if len(sys.argv) > 1:
+        accounts = [a.lstrip("@").strip() for a in sys.argv[1:] if a.strip()]
+    else:
+        accounts = load_accounts()
     if not accounts:
-        sys.exit(f"No accounts found in {ACCOUNTS_FILE}")
+        sys.exit(f"No accounts found")
 
     log(f"Accounts to scrape: {accounts}")
     log(f"Looking back {DAYS_BACK} days")

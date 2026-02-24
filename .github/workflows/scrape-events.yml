@@ -41,6 +41,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           IG_USERNAME: ${{ secrets.IG_USERNAME }}
           IG_PASSWORD: ${{ secrets.IG_PASSWORD }}
+          SKIP_IG: "1"  # IG handled by drip-feed workflow (scrape-ig-drip.yml)
           DEBUG: "1"
         working-directory: nordvestandmore
         run: python3 run_scraper.py all --auto
