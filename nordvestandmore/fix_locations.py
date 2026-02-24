@@ -7,24 +7,6 @@ import os
 import requests
 from pathlib import Path
 
-# ── Load .env ──
-env_file = Path(__file__).resolve().parent / ".env"
-for line in env_file.read_text().splitlines():
-    line = line.strip()
-    if not line or line.startswith("#"):
-        continue
-    if "=" in line:
-        key, val = line.split("=", 1)
-        os.environ[key.strip()] = val.strip().strip('"').strip("'")
-
-NOTION_TOKEN = os.environ["NOTION_TOKEN"]
-NOTION_DB = os.environ["NOTION_DATABASE_ID"]
-HEADERS = {
-    "Authorization": f"Bearer {NOTION_TOKEN}",
-    "Content-Type": "application/json",
-    "Notion-Version": "2022-06-28",
-}
-
 # ── Location replacements ──
 # Maps known full-address locations → clean venue names
 LOCATION_FIXES: dict[str, str] = {
@@ -142,6 +124,25 @@ def clean_location(loc: str) -> str | None:
 
 
 def main():
+    # ── Load .env ──
+    env_file = Path(__file__).resolve().parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, val = line.split("=", 1)
+                os.environ[key.strip()] = val.strip().strip('"').strip("'")
+
+    NOTION_TOKEN = os.environ["NOTION_TOKEN"]
+    NOTION_DB = os.environ["NOTION_DATABASE_ID"]
+    HEADERS = {
+        "Authorization": f"Bearer {NOTION_TOKEN}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+    }
+
     # ── Fetch all entries ──
     print("Fetching all entries from Notion...")
     all_pages = []
