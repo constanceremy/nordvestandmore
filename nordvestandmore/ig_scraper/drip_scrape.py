@@ -36,7 +36,7 @@ STATE_FILE = os.environ.get("IG_STATE_FILE",
 # Summary file — written for GitHub Actions step summary
 SUMMARY_FILE = os.environ.get("GITHUB_STEP_SUMMARY", "")
 
-BATCH_SIZE_DEFAULT = 5
+BATCH_SIZE_DEFAULT = 3
 
 
 # ── State management ──
@@ -348,21 +348,14 @@ def run_scrape(batch_size: int):
                     "time": datetime.now(timezone.utc).strftime("%H:%M UTC"),
                 }
             elif posts == 0:
-                if ig_mod._logged_in:
-                    # We're authenticated — 0 posts just means nothing recent
-                    print(f"  ✅ @{account}: 0 recent posts [{duration:.1f}s]")
-                    results[account] = {"ok": True, "posts": 0, "events": 0, "created": 0}
-                    state["successes"] += 1
-                    state["failures"].pop(account, None)
-                else:
-                    # Not logged in — could be a silent rate limit
-                    reason = "0 posts returned (possibly rate-limited)"
-                    print(f"  ⚠️  @{account}: {reason} [{duration:.1f}s]")
-                    results[account] = {"ok": False, "reason": reason}
-                    state["failures"][account] = {
-                        "reason": reason,
-                        "time": datetime.now(timezone.utc).strftime("%H:%M UTC"),
-                    }
+                # 0 posts could mean: (a) account genuinely hasn't posted, or
+                # (b) Instagram silently returned empty results (soft rate limit).
+                # Either way, don't treat as a hard failure — the session works.
+                reason = "0 posts (quiet account or soft rate-limit)"
+                print(f"  ℹ️  @{account}: {reason} [{duration:.1f}s]")
+                results[account] = {"ok": True, "posts": 0, "events": 0, "created": 0, "note": reason}
+                state["successes"] += 1
+                state["failures"].pop(account, None)
             else:
                 print(f"  ✅ @{account}: {posts} posts, {evts} events, {cr} new [{duration:.1f}s]")
                 results[account] = {
