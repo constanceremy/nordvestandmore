@@ -361,9 +361,10 @@ def run_scrape(batch_size: int):
                     "time": datetime.now(timezone.utc).strftime("%H:%M UTC"),
                 }
             elif posts == 0:
-                # Still 0 after retry — show profile total so we can tell
-                # if the account is genuinely quiet or soft rate-limited
-                reason = f"0 recent / {profile_total} total posts"
+                # Still 0 after retry — show profile total + latest post date
+                # so we can tell if the account is genuinely quiet or rate-limited
+                latest_str = f", latest: {latest_date}" if latest_date else ", latest: unknown (rate-limited?)"
+                reason = f"0 recent / {profile_total} total posts{latest_str}"
                 print(f"  ℹ️  @{account}: {reason} [{duration:.1f}s]")
                 results[account] = {"ok": True, "posts": 0, "events": 0, "created": 0, "note": reason}
                 state["successes"] += 1

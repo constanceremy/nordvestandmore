@@ -192,8 +192,12 @@ def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
     log(f"Scraping @{username} ({total_count} total posts, last {days_back} days)...")
 
     # Collect posts (need to buffer to detect 0-post case)
+    # Also capture the very first post date even if it's outside the window
     posts = []
+    latest_post_date = None
     for post in profile.get_posts():
+        if latest_post_date is None:
+            latest_post_date = post.date_utc
         if post.date_utc < cutoff:
             break
         posts.append(post)
@@ -206,6 +210,8 @@ def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
             try:
                 profile = instaloader.Profile.from_username(L.context, username)
                 for post in profile.get_posts():
+                    if latest_post_date is None:
+                        latest_post_date = post.date_utc
                     if post.date_utc < cutoff:
                         break
                     posts.append(post)
@@ -217,13 +223,17 @@ def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
         newest = posts[0].date_utc.strftime("%b %d")
         oldest = posts[-1].date_utc.strftime("%b %d")
         date_range = f" ({newest})" if newest == oldest else f" ({oldest} – {newest})"
+    elif latest_post_date:
+        date_range = f" (latest: {latest_post_date.strftime('%b %d')})"
     else:
         date_range = ""
     log(f"  Found {len(posts)} recent post{'s' if len(posts) != 1 else ''} from @{username}{date_range}")
 
     # Attach metadata so callers can inspect it
     get_recent_posts._last_total_count = total_count
-    get_recent_posts._last_latest_date = posts[0].date_utc.strftime("%Y-%m-%d") if posts else None
+    get_recent_posts._last_latest_date = (
+        latest_post_date.strftime("%Y-%m-%d") if latest_post_date else None
+    )
 
     yield from posts
 
