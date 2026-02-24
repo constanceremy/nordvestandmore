@@ -331,6 +331,20 @@ def run_scrape(batch_size: int):
             evts = stats.get("total_events", 0)
             cr = stats.get("created", 0)
 
+            # If 0 posts while authenticated, retry once after a pause
+            # (Instagram sometimes silently returns empty on soft rate limits)
+            if posts == 0 and not stats.get("error") and ig_mod._logged_in:
+                print(f"  🔄 0 posts — retrying in 30s...")
+                time.sleep(30)
+                stats = ig_mod.scrape_account(
+                    account, L, client, existing, all_entries,
+                    source_mapping, tmp_dir, auto_login_retry=False,
+                )
+                duration = time.time() - t0
+                posts = stats.get("total_posts", 0)
+                evts = stats.get("total_events", 0)
+                cr = stats.get("created", 0)
+
             if stats.get("error"):
                 reason = f"error after {duration:.1f}s"
                 print(f"  ⚠️  @{account}: {reason}")
@@ -339,18 +353,9 @@ def run_scrape(batch_size: int):
                     "reason": reason,
                     "time": datetime.now(timezone.utc).strftime("%H:%M UTC"),
                 }
-            elif posts == 0 and stats.get("needs_login"):
-                reason = "429 rate-limited (0 posts, needs login)"
-                print(f"  ⚠️  @{account}: {reason} [{duration:.1f}s]")
-                results[account] = {"ok": False, "reason": reason}
-                state["failures"][account] = {
-                    "reason": reason,
-                    "time": datetime.now(timezone.utc).strftime("%H:%M UTC"),
-                }
             elif posts == 0:
-                # 0 posts could mean: (a) account genuinely hasn't posted, or
-                # (b) Instagram silently returned empty results (soft rate limit).
-                # Either way, don't treat as a hard failure — the session works.
+                # Still 0 after retry — could be genuinely quiet or soft-limited.
+                # Don't treat as a hard failure.
                 reason = "0 posts (quiet account or soft rate-limit)"
                 print(f"  ℹ️  @{account}: {reason} [{duration:.1f}s]")
                 results[account] = {"ok": True, "posts": 0, "events": 0, "created": 0, "note": reason}
@@ -371,8 +376,8 @@ def run_scrape(batch_size: int):
             state["total_scraped"] += 1
 
             if i < len(batch):
-                # Be gentle with Instagram — 15s between accounts
-                time.sleep(15)
+                # Be gentle with Instagram — 20s between accounts
+                time.sleep(20)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
