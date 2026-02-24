@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """
-One-time script to update Notion database entries:
-Replace full addresses in the Location field with venue names only.
+Location cleaning utility.
+Maps full addresses to clean venue names for the Nordvest area.
+Used by all scrapers to normalize locations before pushing to Notion.
 """
-import os
-import requests
-from pathlib import Path
 
 # ── Location replacements ──
 # Maps known full-address locations → clean venue names
@@ -121,114 +119,3 @@ def clean_location(loc: str) -> str | None:
                 return cleaned
 
     return None
-
-
-def main():
-    # ── Load .env ──
-    env_file = Path(__file__).resolve().parent / ".env"
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" in line:
-                key, val = line.split("=", 1)
-                os.environ[key.strip()] = val.strip().strip('"').strip("'")
-
-    NOTION_TOKEN = os.environ["NOTION_TOKEN"]
-    NOTION_DB = os.environ["NOTION_DATABASE_ID"]
-    HEADERS = {
-        "Authorization": f"Bearer {NOTION_TOKEN}",
-        "Content-Type": "application/json",
-        "Notion-Version": "2022-06-28",
-    }
-
-    # ── Fetch all entries ──
-    print("Fetching all entries from Notion...")
-    all_pages = []
-    payload: dict = {"page_size": 100}
-    while True:
-        r = requests.post(
-            f"https://api.notion.com/v1/databases/{NOTION_DB}/query",
-            headers=HEADERS,
-            json=payload,
-            timeout=60,
-        )
-        r.raise_for_status()
-        data = r.json()
-        all_pages.extend(data.get("results", []))
-        if not data.get("has_more"):
-            break
-        payload["start_cursor"] = data["next_cursor"]
-
-    print(f"Found {len(all_pages)} entries total.")
-
-    # ── Find entries that need updating ──
-    to_update: list[tuple[str, str, str, str]] = []  # (page_id, name, old_loc, new_loc)
-
-    for page in all_pages:
-        props = page.get("properties", {})
-        page_id = page["id"]
-
-        # Get event name for logging
-        name_parts = props.get("Event Name", {}).get("title", [])
-        name = name_parts[0]["text"]["content"] if name_parts else "(untitled)"
-
-        # Get current location
-        loc_parts = props.get("Location", {}).get("rich_text", [])
-        if not loc_parts:
-            continue
-        old_loc = loc_parts[0]["text"]["content"]
-
-        new_loc = clean_location(old_loc)
-        if new_loc and new_loc != old_loc:
-            to_update.append((page_id, name, old_loc, new_loc))
-
-    if not to_update:
-        print("\n✅ No locations need updating — all clean!")
-        return
-
-    print(f"\n{'─' * 80}")
-    print(f"Found {len(to_update)} entries to update:\n")
-    for _, name, old_loc, new_loc in to_update:
-        print(f"  {name[:50]:<50}")
-        print(f"    OLD: {old_loc}")
-        print(f"    NEW: {new_loc}")
-        print()
-
-    # ── Confirm ──
-    answer = input(f"Update {len(to_update)} entries? [y/N] ").strip().lower()
-    if answer != "y":
-        print("Cancelled.")
-        return
-
-    # ── Apply updates ──
-    updated = 0
-    errors = 0
-    for page_id, name, old_loc, new_loc in to_update:
-        payload = {
-            "properties": {
-                "Location": {
-                    "rich_text": [{"text": {"content": new_loc}}]
-                }
-            }
-        }
-        r = requests.patch(
-            f"https://api.notion.com/v1/pages/{page_id}",
-            headers=HEADERS,
-            json=payload,
-            timeout=30,
-        )
-        if r.status_code < 400:
-            updated += 1
-            print(f"  ✅ {name[:60]}")
-        else:
-            errors += 1
-            print(f"  ❌ {name[:60]} — {r.status_code}: {r.text[:200]}")
-
-    print(f"\n{'─' * 80}")
-    print(f"Done! Updated: {updated}, Errors: {errors}")
-
-
-if __name__ == "__main__":
-    main()
