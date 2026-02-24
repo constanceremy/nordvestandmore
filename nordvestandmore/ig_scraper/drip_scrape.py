@@ -2,15 +2,15 @@
 """
 Drip-feed Instagram scraper
 ----------------------------
-Runs via GitHub Actions cron (every ~30 min), scraping a small batch
+Runs via GitHub Actions cron (every ~60 min), scraping a small batch
 of accounts each time.  A state file tracks the cursor position AND
 accumulated failures, so each run picks up where the last one left off.
 
-Over ~25 hours, all accounts get covered without hitting IG rate limits.
+Over ~30 hours, all accounts get covered without hitting IG rate limits.
 
 Usage:
-    python3 drip_scrape.py                 # scrape next 3 accounts
-    python3 drip_scrape.py --batch-size 5  # scrape next 5
+    python3 drip_scrape.py                 # scrape next 5 accounts
+    python3 drip_scrape.py --batch-size 3  # scrape next 3
     python3 drip_scrape.py --list          # just print next batch
     python3 drip_scrape.py --status        # show cursor + failures
     python3 drip_scrape.py --daily-report  # output daily digest & reset failures
@@ -36,7 +36,7 @@ STATE_FILE = os.environ.get("IG_STATE_FILE",
 # Summary file — written for GitHub Actions step summary
 SUMMARY_FILE = os.environ.get("GITHUB_STEP_SUMMARY", "")
 
-BATCH_SIZE_DEFAULT = 3
+BATCH_SIZE_DEFAULT = 5
 
 
 # ── State management ──
@@ -279,13 +279,28 @@ def run_scrape(batch_size: int):
     if not ig_mod.GEMINI_API_KEY:
         sys.exit("❌ Missing GEMINI_API_KEY")
 
+    # Try to load a pre-existing session file (bootstrapped locally)
+    session_dir = Path.home() / ".config" / "instaloader"
+    session_file = session_dir / f"session-{ig_username}" if ig_username else None
+    has_session = session_file and session_file.exists()
+
     login_first = bool(ig_username and ig_password)
     L = ig_mod.setup_instaloader(login_first=login_first)
+
+    # If login failed but we have a session file, try loading it
+    if not ig_mod._logged_in and has_session:
+        try:
+            L.load_session_from_file(ig_username, str(session_file))
+            ig_mod._logged_in = True
+            print(f"📸 Loaded saved session for {ig_username} ✅")
+        except Exception as e:
+            print(f"📸 Session file exists but failed to load: {e}")
 
     if ig_mod._logged_in:
         print(f"📸 Logged in as {ig_username} ✅")
     else:
         print("📸 Scraping without login (public posts only)")
+        print("   💡 To fix: run locally once to create a session, then push it to CI cache")
 
     client = ig_mod.setup_gemini()
     existing, all_entries = ig_mod.notion_existing_entries()
@@ -306,6 +321,10 @@ def run_scrape(batch_size: int):
             )
             duration = time.time() - t0
 
+            posts = stats.get("total_posts", 0)
+            evts = stats.get("total_events", 0)
+            cr = stats.get("created", 0)
+
             if stats.get("error"):
                 reason = f"error after {duration:.1f}s"
                 print(f"  ⚠️  @{account}: {reason}")
@@ -314,10 +333,24 @@ def run_scrape(batch_size: int):
                     "reason": reason,
                     "time": datetime.now(timezone.utc).strftime("%H:%M UTC"),
                 }
+            elif posts == 0 and stats.get("needs_login"):
+                reason = "429 rate-limited (0 posts, needs login)"
+                print(f"  ⚠️  @{account}: {reason} [{duration:.1f}s]")
+                results[account] = {"ok": False, "reason": reason}
+                state["failures"][account] = {
+                    "reason": reason,
+                    "time": datetime.now(timezone.utc).strftime("%H:%M UTC"),
+                }
+            elif posts == 0:
+                # Could be a genuinely empty account or a silent rate limit
+                reason = "0 posts returned (possibly rate-limited)"
+                print(f"  ⚠️  @{account}: {reason} [{duration:.1f}s]")
+                results[account] = {"ok": False, "reason": reason}
+                state["failures"][account] = {
+                    "reason": reason,
+                    "time": datetime.now(timezone.utc).strftime("%H:%M UTC"),
+                }
             else:
-                posts = stats.get("total_posts", 0)
-                evts = stats.get("total_events", 0)
-                cr = stats.get("created", 0)
                 print(f"  ✅ @{account}: {posts} posts, {evts} events, {cr} new [{duration:.1f}s]")
                 results[account] = {
                     "ok": True,
