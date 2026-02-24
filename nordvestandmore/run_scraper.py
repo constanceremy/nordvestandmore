@@ -369,8 +369,7 @@ def main():
             sd = entry.get("start_date", "")
             if sd:
                 fb_existing[f"{url}##{sd}##"] = entry.get("page_id")
-                # We don't have start_time in the entry, so we only index without it.
-                # The recurring dedup will fall back to this no-time key.
+                fb_existing[f"{url}##{sd}"] = entry.get("page_id")  # without trailing ##
 
     source_mapping = ig_mod.load_source_mapping()
 
