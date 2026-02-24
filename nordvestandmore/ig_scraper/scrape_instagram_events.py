@@ -192,16 +192,31 @@ def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
     log(f"Scraping @{username} ({total_count} total posts, last {days_back} days)...")
 
     # Collect posts (need to buffer to detect 0-post case)
-    # Also capture the very first post date even if it's outside the window
+    # Also capture the very first non-pinned post date even if it's outside the window
+    # Don't break on the first old post — Instagram feed order isn't always strict.
+    # Instead, stop after 3 consecutive old (non-pinned) posts.
     posts = []
     latest_post_date = None
+    pinned_count = 0
+    consecutive_old = 0
+    MAX_CONSECUTIVE_OLD = 3
     for post in profile.get_posts():
+        # Skip pinned posts — they appear first but are usually old
+        if getattr(post, 'is_pinned', False):
+            pinned_count += 1
+            continue
         if latest_post_date is None:
             latest_post_date = post.date_utc
         if post.date_utc < cutoff:
-            break
+            consecutive_old += 1
+            if consecutive_old >= MAX_CONSECUTIVE_OLD:
+                break
+            continue
+        consecutive_old = 0  # Reset — we found a recent post
         posts.append(post)
         time.sleep(random.uniform(0.8, 1.5))
+    if pinned_count:
+        log(f"  Skipped {pinned_count} pinned post{'s' if pinned_count != 1 else ''}")
 
     # If 0 posts and not logged in, Instagram may be hiding them
     if not posts and not _logged_in and auto_login_retry:
@@ -209,11 +224,18 @@ def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
         if try_login(L):
             try:
                 profile = instaloader.Profile.from_username(L.context, username)
+                consecutive_old = 0
                 for post in profile.get_posts():
+                    if getattr(post, 'is_pinned', False):
+                        continue
                     if latest_post_date is None:
                         latest_post_date = post.date_utc
                     if post.date_utc < cutoff:
-                        break
+                        consecutive_old += 1
+                        if consecutive_old >= MAX_CONSECUTIVE_OLD:
+                            break
+                        continue
+                    consecutive_old = 0
                     posts.append(post)
                     time.sleep(random.uniform(0.8, 1.5))
             except Exception as e:
