@@ -375,7 +375,8 @@ def run_scrape(batch_size: int):
             state["total_scraped"] += 1
 
             if i < len(batch):
-                time.sleep(3)
+                # Be gentle with Instagram — 15s between accounts
+                time.sleep(15)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
