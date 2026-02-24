@@ -330,11 +330,13 @@ def run_scrape(batch_size: int):
             posts = stats.get("total_posts", 0)
             evts = stats.get("total_events", 0)
             cr = stats.get("created", 0)
+            profile_total = stats.get("profile_total", "?")
+            latest_date = stats.get("latest_date")
 
             # If 0 posts while authenticated, retry once after a pause
             # (Instagram sometimes silently returns empty on soft rate limits)
             if posts == 0 and not stats.get("error") and ig_mod._logged_in:
-                print(f"  🔄 0 posts — retrying in 30s...")
+                print(f"  🔄 0/{profile_total} posts — retrying in 30s...")
                 time.sleep(30)
                 stats = ig_mod.scrape_account(
                     account, L, client, existing, all_entries,
@@ -344,6 +346,11 @@ def run_scrape(batch_size: int):
                 posts = stats.get("total_posts", 0)
                 evts = stats.get("total_events", 0)
                 cr = stats.get("created", 0)
+                profile_total = stats.get("profile_total", profile_total)
+                latest_date = stats.get("latest_date", latest_date)
+
+            # Format latest post date for display
+            date_info = f", latest: {latest_date}" if latest_date else ""
 
             if stats.get("error"):
                 reason = f"error after {duration:.1f}s"
@@ -354,15 +361,16 @@ def run_scrape(batch_size: int):
                     "time": datetime.now(timezone.utc).strftime("%H:%M UTC"),
                 }
             elif posts == 0:
-                # Still 0 after retry — could be genuinely quiet or soft-limited.
-                # Don't treat as a hard failure.
-                reason = "0 posts (quiet account or soft rate-limit)"
+                # Still 0 after retry — show profile total + latest post date
+                # so we can tell if the account is genuinely quiet or rate-limited
+                latest_str = f", latest: {latest_date}" if latest_date else ", latest: unknown (rate-limited?)"
+                reason = f"0 recent / {profile_total} total posts{latest_str}"
                 print(f"  ℹ️  @{account}: {reason} [{duration:.1f}s]")
                 results[account] = {"ok": True, "posts": 0, "events": 0, "created": 0, "note": reason}
                 state["successes"] += 1
                 state["failures"].pop(account, None)
             else:
-                print(f"  ✅ @{account}: {posts} posts, {evts} events, {cr} new [{duration:.1f}s]")
+                print(f"  ✅ @{account}: {posts}/{profile_total} posts{date_info}, {evts} events, {cr} new [{duration:.1f}s]")
                 results[account] = {
                     "ok": True,
                     "posts": posts,

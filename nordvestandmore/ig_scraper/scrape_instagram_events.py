@@ -188,11 +188,16 @@ def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
         else:
             return
 
-    log(f"Scraping @{username} (posts from last {days_back} days)...")
+    total_count = getattr(profile, 'mediacount', '?')
+    log(f"Scraping @{username} ({total_count} total posts, last {days_back} days)...")
 
     # Collect posts (need to buffer to detect 0-post case)
+    # Also capture the very first post date even if it's outside the window
     posts = []
+    latest_post_date = None
     for post in profile.get_posts():
+        if latest_post_date is None:
+            latest_post_date = post.date_utc
         if post.date_utc < cutoff:
             break
         posts.append(post)
@@ -205,6 +210,8 @@ def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
             try:
                 profile = instaloader.Profile.from_username(L.context, username)
                 for post in profile.get_posts():
+                    if latest_post_date is None:
+                        latest_post_date = post.date_utc
                     if post.date_utc < cutoff:
                         break
                     posts.append(post)
@@ -212,7 +219,22 @@ def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
             except Exception as e:
                 log(f"  Retry after login failed: {e}")
 
-    log(f"  Found {len(posts)} recent post{'s' if len(posts) != 1 else ''} from @{username}")
+    if posts:
+        newest = posts[0].date_utc.strftime("%b %d")
+        oldest = posts[-1].date_utc.strftime("%b %d")
+        date_range = f" ({newest})" if newest == oldest else f" ({oldest} – {newest})"
+    elif latest_post_date:
+        date_range = f" (latest: {latest_post_date.strftime('%b %d')})"
+    else:
+        date_range = ""
+    log(f"  Found {len(posts)} recent post{'s' if len(posts) != 1 else ''} from @{username}{date_range}")
+
+    # Attach metadata so callers can inspect it
+    get_recent_posts._last_total_count = total_count
+    get_recent_posts._last_latest_date = (
+        latest_post_date.strftime("%Y-%m-%d") if latest_post_date else None
+    )
+
     yield from posts
 
 
@@ -598,13 +620,16 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
     try:
         posts = list(get_recent_posts(L, account, DAYS_BACK,
                                       auto_login_retry=auto_login_retry))
+        profile_total = getattr(get_recent_posts, '_last_total_count', '?')
+        latest_date = getattr(get_recent_posts, '_last_latest_date', None)
     except Exception as e:
         log(f"  ⚠️ Instagram error for @{account}: {e}")
         log(f"  Skipping @{account} (try again later — Instagram may be rate-limiting).")
         return {
             "created": created, "updated": updated, "skipped": skipped,
             "flagged_dupes": flagged_dupes, "total_events": total_events,
-            "total_posts": total_posts, "error": True,
+            "total_posts": total_posts, "profile_total": 0,
+            "latest_date": None, "error": True,
         }
 
     for post in posts:
@@ -859,7 +884,8 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
     return {
         "created": created, "updated": updated, "skipped": skipped,
         "flagged_dupes": flagged_dupes, "total_events": total_events,
-        "total_posts": total_posts, "needs_login": needs_login,
+        "total_posts": total_posts, "profile_total": profile_total,
+        "latest_date": latest_date, "needs_login": needs_login,
     }
 
 
