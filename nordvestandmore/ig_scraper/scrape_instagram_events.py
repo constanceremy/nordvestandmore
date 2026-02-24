@@ -629,14 +629,19 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
         total_events += len(events)
 
         past_count = 0
+        max_date = date.today() + timedelta(days=180)
         for event_data in events:
-            # Skip past events
+            # Skip past events and events too far in the future
             event_date_str = event_data.get("event_date")
             if event_date_str:
                 try:
-                    if date.fromisoformat(event_date_str) < date.today():
+                    ev_date_obj = date.fromisoformat(event_date_str)
+                    if ev_date_obj < date.today():
                         past_count += 1
                         log(f"  Skipping past event: {event_data.get('event_name')} ({event_date_str})")
+                        continue
+                    if ev_date_obj > max_date:
+                        log(f"  Skipping too-far-future event: {event_data.get('event_name')} ({event_date_str})")
                         continue
                 except ValueError:
                     pass

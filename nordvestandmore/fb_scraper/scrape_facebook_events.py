@@ -19,7 +19,7 @@ import re
 import time
 import json
 import collections
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright, TimeoutError as PwTimeout
@@ -1101,13 +1101,19 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
         log(f"  Parsed {len(parsed_events)} event(s) from: {event_url}")
         total_events += len(parsed_events)
 
+        max_date = date.today() + timedelta(days=180)
         for event_data in parsed_events:
             event_date_str = event_data.get("event_date")
             if event_date_str:
                 try:
-                    if date.fromisoformat(event_date_str) < date.today():
+                    ev_date_obj = date.fromisoformat(event_date_str)
+                    if ev_date_obj < date.today():
                         if DEBUG:
                             log(f"  Skipping past event: {event_data.get('event_name')} ({event_date_str})")
+                        continue
+                    if ev_date_obj > max_date:
+                        if DEBUG:
+                            log(f"  Skipping too-far-future event: {event_data.get('event_name')} ({event_date_str})")
                         continue
                 except ValueError:
                     pass
