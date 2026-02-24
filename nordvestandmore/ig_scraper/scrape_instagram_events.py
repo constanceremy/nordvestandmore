@@ -36,7 +36,7 @@ import requests
 
 # Add parent dir to path for shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from dedup import load_source_mapping, find_duplicate
+from dedup import load_source_mapping, find_duplicate, similarity
 from auto_tag import classify_event, is_not_event, is_deal, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
 from deals_db import push_to_deals_db
@@ -800,16 +800,21 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
             dedup_key = make_dedup_key(ev)
             page_id = existing.get(dedup_key)
 
-            if DEBUG and not page_id:
-                # Log dedup miss to help diagnose duplicate creation
-                log(f"    🔍 Dedup miss: key={dedup_key[:120]}")
-                # Check if a similar URL exists in existing (partial match)
-                url_prefix = ev.get("url", "")
-                similar = [k for k in existing if url_prefix in k]
-                if similar:
-                    log(f"    🔍 Similar keys in DB: {len(similar)} match(es)")
-                    for s in similar[:3]:
-                        log(f"        {s[:120]}")
+            # Fallback: if URL-based dedup missed, try name+date fuzzy match
+            if not page_id:
+                ev_name = ev.get("event_name", "")
+                ev_date = ev.get("start_date", "")
+                for entry in all_entries:
+                    if entry.get("start_date", "")[:10] != ev_date[:10]:
+                        continue
+                    name_sim = similarity(ev_name, entry.get("name", ""))
+                    if name_sim >= 0.80:
+                        page_id = entry.get("page_id")
+                        if DEBUG:
+                            log(f"    🔗 Fuzzy name match ({name_sim:.0%}): '{entry.get('name')}' → updating")
+                        break
+                if DEBUG and not page_id:
+                    log(f"    🔍 Dedup miss: key={dedup_key[:120]}")
 
             if page_id:
                 r = notion_update(page_id, ev)

@@ -3442,6 +3442,20 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
             dedup_key_no_time = f"{event_url}##{ev.get('start_date', '')}"
             page_id = existing.get(dedup_key_no_time)
 
+        # Fallback: if URL-based dedup missed, try name+date fuzzy match
+        if not page_id:
+            ev_name = ev.get("event_name", "")
+            ev_date = ev.get("start_date", "")
+            for entry in all_entries:
+                if entry.get("start_date", "")[:10] != ev_date[:10]:
+                    continue
+                name_sim = similarity(ev_name, entry.get("name", ""))
+                if name_sim >= 0.80:
+                    page_id = entry.get("page_id")
+                    if DEBUG:
+                        log(f"    🔗 Fuzzy name match ({name_sim:.0%}): '{entry.get('name')}' → updating instead of creating")
+                    break
+
         try:
             if page_id:
                 # Update existing

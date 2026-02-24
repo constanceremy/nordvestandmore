@@ -38,8 +38,12 @@ LOCATION_FIXES: dict[str, str] = {
     "Kapernaumskirken, Frederikssundsvej 45, 2400 København NV": "Kapernaumskirken",
     # Thoravej 29
     "Thoravej 29, 2400 København NV": "Thoravej 29",
-    # KK Bibliotek
+    # KK Bibliotek — various capitalizations and formats
     "BIBLIOTEKET Rentemestervej, Rentemestervej 76, 2400 København NV": "Biblioteket Rentemestervej",
+    "BIBLIOTEKET Rentemestervej": "Biblioteket Rentemestervej",
+    "Biblioteket rentemestervej": "Biblioteket Rentemestervej",
+    "biblioteket rentemestervej": "Biblioteket Rentemestervej",
+    "Rentemestervej 76, 2400 København NV": "Biblioteket Rentemestervej",
     # Ansgarkirken
     "Ansgarkirken, Sallingvej 55, 2720 Vanløse": "Ansgarkirken",
     "Ansgarkirken, Sallingvej 55, 2720 København NV": "Ansgarkirken",
@@ -102,18 +106,26 @@ ADDRESS_SUFFIXES = [
 ]
 
 
+# Build a case-insensitive lookup for LOCATION_FIXES
+_LOCATION_FIXES_LOWER: dict[str, str] = {k.lower(): v for k, v in LOCATION_FIXES.items()}
+
+
 def clean_location(loc: str) -> str | None:
-    """Return cleaned location or None if no change needed."""
+    """Return cleaned location or None if no change needed.
+    Matching is case-insensitive.
+    """
     if not loc:
         return None
 
-    # Exact match first
-    if loc in LOCATION_FIXES:
-        return LOCATION_FIXES[loc]
+    # Exact match first (case-insensitive)
+    fixed = _LOCATION_FIXES_LOWER.get(loc.lower())
+    if fixed:
+        return fixed
 
-    # Strip known address suffixes (for sub-venue cases like "Dansekapellet, Thoravej 29, ...")
+    # Strip known address suffixes (case-insensitive)
+    loc_lower = loc.lower()
     for suffix in ADDRESS_SUFFIXES:
-        if loc.endswith(suffix):
+        if loc_lower.endswith(suffix.lower()):
             cleaned = loc[: -len(suffix)].strip()
             if cleaned:
                 return cleaned
