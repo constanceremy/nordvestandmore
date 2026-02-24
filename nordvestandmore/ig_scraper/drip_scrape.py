@@ -296,14 +296,10 @@ def run_scrape(batch_size: int):
         except Exception as e:
             print(f"📸 Session file exists but failed to load: {e}")
 
-    # Step 2: Only try password login if session didn't work (skip in CI to avoid checkpoints)
+    # Step 2: Only try password login if session didn't work
     if not ig_mod._logged_in and ig_username and ig_password:
-        # Check if we're in CI — password login from data center IPs triggers checkpoints
-        if not os.environ.get("GITHUB_ACTIONS"):
-            print("📸 No session file — trying password login...")
-            ig_mod.try_login(L)
-        else:
-            print("📸 Skipping password login in CI (would trigger checkpoint)")
+        print("📸 No session file — trying password login...")
+        ig_mod.try_login(L)
 
     if ig_mod._logged_in:
         print(f"📸 Authenticated as {ig_username} ✅")
