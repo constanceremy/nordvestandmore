@@ -213,11 +213,17 @@ def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
             except Exception as e:
                 log(f"  Retry after login failed: {e}")
 
-    log(f"  Found {len(posts)} recent post{'s' if len(posts) != 1 else ''} from @{username}")
+    if posts:
+        newest = posts[0].date_utc.strftime("%b %d")
+        oldest = posts[-1].date_utc.strftime("%b %d")
+        date_range = f" ({newest})" if newest == oldest else f" ({oldest} – {newest})"
+    else:
+        date_range = ""
+    log(f"  Found {len(posts)} recent post{'s' if len(posts) != 1 else ''} from @{username}{date_range}")
 
-    # Attach total media count to the generator so callers can inspect it
-    # (the caller captures the list, and we stash it on the function)
+    # Attach metadata so callers can inspect it
     get_recent_posts._last_total_count = total_count
+    get_recent_posts._last_latest_date = posts[0].date_utc.strftime("%Y-%m-%d") if posts else None
 
     yield from posts
 
@@ -605,13 +611,15 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
         posts = list(get_recent_posts(L, account, DAYS_BACK,
                                       auto_login_retry=auto_login_retry))
         profile_total = getattr(get_recent_posts, '_last_total_count', '?')
+        latest_date = getattr(get_recent_posts, '_last_latest_date', None)
     except Exception as e:
         log(f"  ⚠️ Instagram error for @{account}: {e}")
         log(f"  Skipping @{account} (try again later — Instagram may be rate-limiting).")
         return {
             "created": created, "updated": updated, "skipped": skipped,
             "flagged_dupes": flagged_dupes, "total_events": total_events,
-            "total_posts": total_posts, "profile_total": 0, "error": True,
+            "total_posts": total_posts, "profile_total": 0,
+            "latest_date": None, "error": True,
         }
 
     for post in posts:
@@ -867,7 +875,7 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
         "created": created, "updated": updated, "skipped": skipped,
         "flagged_dupes": flagged_dupes, "total_events": total_events,
         "total_posts": total_posts, "profile_total": profile_total,
-        "needs_login": needs_login,
+        "latest_date": latest_date, "needs_login": needs_login,
     }
 
 

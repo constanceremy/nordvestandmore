@@ -331,6 +331,7 @@ def run_scrape(batch_size: int):
             evts = stats.get("total_events", 0)
             cr = stats.get("created", 0)
             profile_total = stats.get("profile_total", "?")
+            latest_date = stats.get("latest_date")
 
             # If 0 posts while authenticated, retry once after a pause
             # (Instagram sometimes silently returns empty on soft rate limits)
@@ -346,6 +347,10 @@ def run_scrape(batch_size: int):
                 evts = stats.get("total_events", 0)
                 cr = stats.get("created", 0)
                 profile_total = stats.get("profile_total", profile_total)
+                latest_date = stats.get("latest_date", latest_date)
+
+            # Format latest post date for display
+            date_info = f", latest: {latest_date}" if latest_date else ""
 
             if stats.get("error"):
                 reason = f"error after {duration:.1f}s"
@@ -364,7 +369,7 @@ def run_scrape(batch_size: int):
                 state["successes"] += 1
                 state["failures"].pop(account, None)
             else:
-                print(f"  ✅ @{account}: {posts}/{profile_total} posts, {evts} events, {cr} new [{duration:.1f}s]")
+                print(f"  ✅ @{account}: {posts}/{profile_total} posts{date_info}, {evts} events, {cr} new [{duration:.1f}s]")
                 results[account] = {
                     "ok": True,
                     "posts": posts,
