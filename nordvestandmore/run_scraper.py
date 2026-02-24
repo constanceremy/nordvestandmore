@@ -255,6 +255,14 @@ def main():
     if auto_mode:
         args.remove("--auto")
 
+    # Handle --skip-ig flag (IG handled by drip-feed workflow)
+    skip_ig = "--skip-ig" in args or os.environ.get("SKIP_IG") == "1"
+    if "--skip-ig" in args:
+        args.remove("--skip-ig")
+    if skip_ig:
+        log("📸 Instagram scraping SKIPPED (--skip-ig / SKIP_IG=1)")
+        log("   IG is handled by the drip-feed workflow (scrape-ig-drip.yml)")
+
     # Handle --from flag (resume from a specific entity)
     start_from = None
     if "--from" in args:
@@ -313,7 +321,7 @@ def main():
     log(f"Modules loaded in {time.time() - t0:.1f}s")
 
     # ── Determine what we need ──
-    has_ig = any(r["instagram"] for r in selected)
+    has_ig = any(r["instagram"] for r in selected) and not skip_ig
     has_fb = any(r["facebook"] for r in selected)
     has_web = any(r["website"] for r in selected)
 
@@ -477,8 +485,8 @@ def main():
                 else:
                     web_ok = "⏭️ no parser"
 
-            # ── Instagram ──
-            if ig_handle:
+            # ── Instagram (skipped if --skip-ig / SKIP_IG=1, handled by drip-feed) ──
+            if ig_handle and not skip_ig:
                 login_label = "logged in" if ig_mod._logged_in else "no login"
                 log(f"  📸 Scraping IG: @{ig_handle} ({login_label})...")
                 t0 = time.time()
@@ -532,8 +540,8 @@ def main():
             else:
                 time.sleep(1)
 
-        # ── Instagram retry phase ──
-        if ig_retry_list:
+        # ── Instagram retry phase (skipped when IG is handled by drip-feed) ──
+        if ig_retry_list and not skip_ig:
             print()
             print("═" * 60)
             log(f"🔄 Instagram retry — {len(ig_retry_list)} account(s) failed")
@@ -751,13 +759,13 @@ def main():
         for r in failed_ig:
             summary_lines.append(f"- `@{r['ig_handle']}` ({r['name']}): {r.get('reason', '?')}")
 
-        # Build a ready-to-use manual retry command
-        failed_names = [f'"{r["name"]}"' for r in failed_ig]
+        # Build a ready-to-use manual retry command (IG only)
+        failed_handles = [r["ig_handle"] for r in failed_ig]
         summary_lines.append("")
-        summary_lines.append("### Manual retry command")
-        summary_lines.append("Run this locally to scrape just the failed accounts:")
+        summary_lines.append("### Manual retry command (IG only)")
+        summary_lines.append("Run this locally to scrape just the failed IG accounts:")
         summary_lines.append("```bash")
-        summary_lines.append(f"cd nordvestandmore && python3 run_scraper.py {' '.join(failed_names)}")
+        summary_lines.append(f"cd nordvestandmore/ig_scraper && python3 scrape_instagram_events.py {' '.join(failed_handles)}")
         summary_lines.append("```")
 
     if errors_log:
