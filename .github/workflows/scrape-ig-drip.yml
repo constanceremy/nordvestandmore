@@ -39,6 +39,26 @@ jobs:
           fi
           pip install -r requirements.txt
 
+      # ── Ensure IG session is available ──
+      - name: Restore IG session
+        env:
+          IG_USERNAME: ${{ secrets.IG_USERNAME }}
+          IG_SESSION_B64: ${{ secrets.IG_SESSION_B64 }}
+        run: |
+          # GitHub Actions may override HOME, so ensure session is in the right place
+          REAL_HOME=$(eval echo ~)
+          SESSION_DIR="$REAL_HOME/.config/instaloader"
+          SESSION_FILE="$SESSION_DIR/session-${IG_USERNAME}"
+          if [ -f "$SESSION_FILE" ]; then
+            echo "📸 Session file already exists at $SESSION_FILE"
+          elif [ -n "$IG_SESSION_B64" ]; then
+            echo "📸 Restoring session from secret"
+            mkdir -p "$SESSION_DIR"
+            echo "$IG_SESSION_B64" | base64 -d > "$SESSION_FILE"
+          else
+            echo "📸 No session file or secret found — will scrape without login"
+          fi
+
       # ── Run the drip scraper ──
       - name: Scrape IG batch
         env:
