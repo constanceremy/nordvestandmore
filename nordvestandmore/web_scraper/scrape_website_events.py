@@ -22,7 +22,7 @@ import time
 import json
 import collections
 import requests
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from bs4 import BeautifulSoup
 
@@ -3289,7 +3289,19 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
     log(f"  Found {len(parsed_events)} upcoming event(s)")
     total_events = len(parsed_events)
 
+    max_date = date.today() + timedelta(days=180)
     for event_data in parsed_events:
+        # Skip events too far in the future (>180 days)
+        ev_date_str = event_data.get("event_date")
+        if ev_date_str:
+            try:
+                if date.fromisoformat(ev_date_str) > max_date:
+                    if DEBUG:
+                        log(f"  Skipping too-far-future event: {event_data.get('event_name')} ({ev_date_str})")
+                    continue
+            except ValueError:
+                pass
+
         event_url = event_data.get("url", events_url)
 
         # ── Handle cross-posted events (e.g. Flere Fugle events on Demokratigarage) ──
