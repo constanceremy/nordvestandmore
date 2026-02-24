@@ -2,16 +2,16 @@ name: Instagram Drip Scraper
 
 on:
   schedule:
-    # Every 30 minutes — with 3 accounts per run, covers all ~150
-    # accounts in ~25 hours.  A cursor tracks position so each
-    # run picks up where the last one left off.
-    - cron: "*/30 * * * *"
+    # Every 60 minutes — with 5 accounts per run, covers all ~150
+    # accounts in ~30 hours (~1.25 days).  A cursor tracks position
+    # so each run picks up where the last one left off.
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       batch_size:
-        description: "Number of accounts to scrape (default: 3)"
+        description: "Number of accounts to scrape (default: 5)"
         type: number
-        default: 3
+        default: 5
       accounts:
         description: "Specific accounts to scrape (space-separated, overrides cursor)"
         type: string
@@ -52,6 +52,23 @@ jobs:
           key: ig-session-never-matches
           restore-keys: ig-session-
 
+      # If no cached session exists, bootstrap from GitHub secret
+      - name: Bootstrap IG session from secret
+        if: env.IG_SESSION_B64 != ''
+        env:
+          IG_SESSION_B64: ${{ secrets.IG_SESSION_B64 }}
+          IG_USERNAME: ${{ secrets.IG_USERNAME }}
+        run: |
+          SESSION_DIR="$HOME/.config/instaloader"
+          SESSION_FILE="$SESSION_DIR/session-${IG_USERNAME}"
+          if [ ! -f "$SESSION_FILE" ]; then
+            echo "📸 No cached session — bootstrapping from secret"
+            mkdir -p "$SESSION_DIR"
+            echo "$IG_SESSION_B64" | base64 -d > "$SESSION_FILE"
+          else
+            echo "📸 Session file already cached, skipping bootstrap"
+          fi
+
       # ── Run the drip scraper ──
       - name: Scrape IG batch
         env:
@@ -67,7 +84,7 @@ jobs:
             echo "📸 Manual mode: scraping specific accounts"
             python3 scrape_instagram_events.py ${{ inputs.accounts }}
           else
-            BATCH_SIZE="${{ inputs.batch_size || '3' }}"
+            BATCH_SIZE="${{ inputs.batch_size || '5' }}"
             python3 drip_scrape.py --batch-size "$BATCH_SIZE"
           fi
 
@@ -92,7 +109,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Only run at the 06:00 UTC slot (first cron hit after 06:00)
-    if: github.event.schedule == '*/30 * * * *'
+    if: github.event.schedule == '0 * * * *'
     needs: drip
 
     steps:
@@ -100,9 +117,8 @@ jobs:
         id: check
         run: |
           HOUR=$(date -u +%H)
-          MINUTE=$(date -u +%M)
-          # Run the daily report between 06:00-06:29 UTC (~7-8 AM Copenhagen)
-          if [ "$HOUR" = "06" ] && [ "$MINUTE" -lt "30" ]; then
+          # Run the daily report at the 06:00 UTC slot (~7-8 AM Copenhagen)
+          if [ "$HOUR" = "06" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
