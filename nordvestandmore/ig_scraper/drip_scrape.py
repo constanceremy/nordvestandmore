@@ -279,16 +279,16 @@ def run_scrape(batch_size: int):
     if not ig_mod.GEMINI_API_KEY:
         sys.exit("❌ Missing GEMINI_API_KEY")
 
-    # Try to load a pre-existing session file (bootstrapped locally)
+    # Try to load a pre-existing session file FIRST (avoids checkpoint challenges)
     session_dir = Path.home() / ".config" / "instaloader"
     session_file = session_dir / f"session-{ig_username}" if ig_username else None
     has_session = session_file and session_file.exists()
 
-    login_first = bool(ig_username and ig_password)
-    L = ig_mod.setup_instaloader(login_first=login_first)
+    # Create instaloader WITHOUT password login — we try the session file first
+    L = ig_mod.setup_instaloader(login_first=False)
 
-    # If login failed but we have a session file, try loading it
-    if not ig_mod._logged_in and has_session:
+    # Step 1: Try session file (bootstrapped from local machine or cached from previous run)
+    if has_session and ig_username:
         try:
             L.load_session_from_file(ig_username, str(session_file))
             ig_mod._logged_in = True
@@ -296,11 +296,21 @@ def run_scrape(batch_size: int):
         except Exception as e:
             print(f"📸 Session file exists but failed to load: {e}")
 
+    # Step 2: Only try password login if session didn't work (skip in CI to avoid checkpoints)
+    if not ig_mod._logged_in and ig_username and ig_password:
+        # Check if we're in CI — password login from data center IPs triggers checkpoints
+        if not os.environ.get("GITHUB_ACTIONS"):
+            print("📸 No session file — trying password login...")
+            ig_mod.try_login(L)
+        else:
+            print("📸 Skipping password login in CI (would trigger checkpoint)")
+
     if ig_mod._logged_in:
-        print(f"📸 Logged in as {ig_username} ✅")
+        print(f"📸 Authenticated as {ig_username} ✅")
     else:
         print("📸 Scraping without login (public posts only)")
-        print("   💡 To fix: run locally once to create a session, then push it to CI cache")
+        print("   💡 To fix: run locally to create a session, base64-encode it,")
+        print("   and add as IG_SESSION_B64 GitHub secret")
 
     client = ig_mod.setup_gemini()
     existing, all_entries = ig_mod.notion_existing_entries()
