@@ -521,6 +521,7 @@ Rules:
 - If the description does NOT mention specific times for each day, set start_time and end_time to null.
   Do NOT invent times or use the overall event date-range start/end as individual day times.
 - NEVER use a venue/location name as the event_name.
+- If the description mentions both "doors" (or "døre åbner") and "show" (or "start") times, use the SHOW/START time as start_time, NOT the doors time.
 - If NO events are found, return {{"events": []}}
 - Respond ONLY with the JSON, no extra text."""
 
@@ -703,6 +704,7 @@ Respond ONLY with valid JSON:
 Rules:
 - The current date is {datetime.now().strftime('%Y-%m-%d')}. If no year is mentioned, assume the next upcoming occurrence.
 - NEVER use a venue/location name as the event_name. The event_name should be the actual name of the event (e.g. "Sunday Deep" not "Rört").
+- If the text mentions both "doors" (or "døre åbner") and "show" (or "start") times, use the SHOW/START time as start_time, NOT the doors time.
 - If NO events are found, return {{"events": []}}
 - Respond ONLY with the JSON, no extra text."""
 

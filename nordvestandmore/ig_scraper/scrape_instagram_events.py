@@ -391,6 +391,7 @@ Rules:
 - Read ALL images carefully — event details (dates, times, locations) are often only in later slides of the carousel.
 - A caption like "Fredag d. 20. februar kl. 10" IS an event — don't skip it just because the image looks generic.
 - For tagged_accounts: extract ALL @mentions from the caption (not @{account} itself). Include collaborators, performers, DJs, venues, etc. If none found, return an empty list.
+- If the post mentions both "doors" (or "døre åbner") and "show" (or "start") times, use the SHOW/START time as start_time, NOT the doors time.
 - Respond ONLY with the JSON, no extra text."""
 
     try:
