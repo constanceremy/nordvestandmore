@@ -309,8 +309,19 @@ def daily_report():
 
 # ── Main scraping logic ──
 
+def _fmt_duration(secs: float) -> str:
+    """Format seconds as 'Xm Ys' or 'Ys'."""
+    if secs >= 60:
+        return f"{int(secs // 60)}m {int(secs % 60)}s"
+    return f"{secs:.1f}s"
+
+
 def run_scrape(batch_size: int):
     """Scrape the next batch of accounts."""
+    run_start = time.time()
+    time_in_delays = 0.0  # Track time spent in deliberate delays
+    time_in_retries = 0.0  # Track time spent in retry waits
+
     state = load_state()
     batch, new_cursor = get_batch(state, batch_size)
 
@@ -366,9 +377,13 @@ def run_scrape(batch_size: int):
         print("   💡 To fix: run locally to create a session, base64-encode it,")
         print("   and add as IG_SESSION_B64 GitHub secret")
 
+    # ── Load Notion data (can be slow with many entries) ──
+    t_notion = time.time()
     client = ig_mod.setup_gemini()
     existing, all_entries = ig_mod.notion_existing_entries()
     source_mapping = ig_mod.load_source_mapping()
+    notion_load_time = time.time() - t_notion
+    print(f"⏱️  Notion + setup loaded in {_fmt_duration(notion_load_time)} ({len(all_entries)} entries)")
 
     import tempfile
     import shutil
@@ -395,6 +410,7 @@ def run_scrape(batch_size: int):
             # (Instagram sometimes silently returns empty on soft rate limits)
             if posts == 0 and not stats.get("error") and ig_mod._logged_in:
                 print(f"  🔄 0/{profile_total} posts — retrying in 30s...")
+                time_in_retries += 30
                 time.sleep(30)
                 stats = ig_mod.scrape_account(
                     account, L, client, existing, all_entries,
@@ -443,6 +459,8 @@ def run_scrape(batch_size: int):
 
             if i < len(batch):
                 # Be gentle with Instagram — 20s between accounts
+                print(f"  ⏳ Waiting 20s before next account...")
+                time_in_delays += 20
                 time.sleep(20)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -451,18 +469,26 @@ def run_scrape(batch_size: int):
     state["cursor"] = new_cursor
     save_state(state)
 
-    next_account = accounts[new_cursor] if accounts else "?"
-    print(f"\n📸 Cursor saved: {new_cursor}/{len(accounts)} (next: @{next_account})")
+    next_account = all_accounts[new_cursor] if all_accounts else "?"
+    print(f"\n📸 Cursor saved: {new_cursor}/{len(all_accounts)} (next: @{next_account})")
 
     # Write step summary
     summary = format_run_summary(batch, results, state)
     write_summary(summary)
 
-    # Print final stats
+    # Print final stats + timing breakdown
+    total_elapsed = time.time() - run_start
+    time_scraping = total_elapsed - notion_load_time - time_in_delays - time_in_retries
     ok = sum(1 for r in results.values() if r["ok"])
     fail = sum(1 for r in results.values() if not r["ok"])
     print(f"\n📸 Batch done: {ok} succeeded, {fail} failed")
     print(f"   Accumulated failures today: {len(state.get('failures', {}))}")
+    print(f"\n⏱️  Time breakdown (total {_fmt_duration(total_elapsed)}):")
+    print(f"   Notion/setup loading: {_fmt_duration(notion_load_time)}")
+    print(f"   Scraping + Gemini:    {_fmt_duration(time_scraping)}")
+    print(f"   Delays (20s × {len(batch)-1}):    {_fmt_duration(time_in_delays)}")
+    if time_in_retries > 0:
+        print(f"   Retry waits (30s):    {_fmt_duration(time_in_retries)}")
 
     if fail:
         sys.exit(1)
