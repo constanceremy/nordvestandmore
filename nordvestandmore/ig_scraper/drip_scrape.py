@@ -489,7 +489,16 @@ def run_scrape(batch_size: int):
                 state["failures"].pop(account, None)
                 acct_status = f"💤 @{account}: 0 recent posts"
             else:
-                print(f"  ✅ @{account}: {posts}/{profile_total} posts{date_info}, {evts} events, {cr} new [{duration:.1f}s]")
+                upd = stats.get("updated", 0)
+                already = upd  # updated = already existed in Notion
+                if evts == 0:
+                    print(f"  ✅ @{account}: {posts}/{profile_total} posts{date_info}, 0 events [{duration:.1f}s]")
+                elif cr == evts:
+                    print(f"  ✅ @{account}: {posts}/{profile_total} posts{date_info}, {evts} events (all new) [{duration:.1f}s]")
+                elif already == evts:
+                    print(f"  ✅ @{account}: {posts}/{profile_total} posts{date_info}, {evts} events (all already in Notion) [{duration:.1f}s]")
+                else:
+                    print(f"  ✅ @{account}: {posts}/{profile_total} posts{date_info}, {evts} events ({cr} new, {already} already in Notion) [{duration:.1f}s]")
                 results[account] = {
                     "ok": True,
                     "posts": posts,
@@ -499,7 +508,12 @@ def run_scrape(batch_size: int):
                 state["successes"] += 1
                 # Clear from failures if it succeeded this time
                 state["failures"].pop(account, None)
-                acct_status = f"✅ @{account}: {posts} posts, {evts} events, {cr} new"
+                if cr:
+                    acct_status = f"✅ @{account}: {cr} new event(s)!"
+                elif evts:
+                    acct_status = f"✅ @{account}: {evts} event(s), all already in Notion"
+                else:
+                    acct_status = f"✅ @{account}: {posts} posts, no events"
 
             # Per-account progress notification
             _ntfy(

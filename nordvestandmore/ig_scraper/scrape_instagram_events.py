@@ -906,8 +906,9 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 try:
                     r.raise_for_status()
                     updated += 1
+                    log(f"    🔄 Already exists, updated: {ev.get('event_name')} | {ev.get('start_date')} | {ev.get('location')}")
                 except Exception:
-                    log(f"  Update failed for {ev.get('event_name')}")
+                    log(f"    ❌ Update failed: {ev.get('event_name')}")
             else:
                 r = notion_create(ev)
                 if r.status_code == 429:
@@ -929,12 +930,9 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                             "location": ev.get("location", ""),
                             "start_time": ev.get("start_time", ""),
                         })
+                    log(f"    ✨ NEW → {ev.get('event_name')} | {ev.get('start_date')} | {ev.get('location')}")
                 except Exception:
-                    log(f"  Create failed for {ev.get('event_name')}")
-
-            log(
-                f"    → {ev.get('event_name')} | {ev.get('start_date')} | {ev.get('location')}"
-            )
+                    log(f"    ❌ Create failed: {ev.get('event_name')}")
             time.sleep(0.3)
 
     # Flag if this account might need login (got 0 posts without being logged in)
