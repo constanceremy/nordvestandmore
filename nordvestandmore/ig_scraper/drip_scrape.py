@@ -73,6 +73,7 @@ def _default_state() -> dict:
         "successes": 0,
         "total_scraped": 0,
         "last_reset": datetime.now(timezone.utc).isoformat(),
+        "last_post_dates": {},  # {"handle": "YYYY-MM-DD"} — last post seen per account
     }
 
 
@@ -488,6 +489,10 @@ def run_scrape(batch_size: int):
             # Build a short status line for this account
             elapsed_total = _fmt_duration(time.time() - run_start)
 
+            # Persist latest post date regardless of outcome
+            if latest_date:
+                state.setdefault("last_post_dates", {})[account] = latest_date
+
             if stats.get("error"):
                 reason = f"error after {duration:.1f}s"
                 print(f"  ⚠️  @{account}: {reason}")
@@ -605,6 +610,8 @@ def main():
                         help="Show cursor position and failures")
     parser.add_argument("--daily-report", action="store_true",
                         help="Output daily digest and reset failure counters")
+    parser.add_argument("--last-posts", action="store_true",
+                        help="Show last seen post date for each account")
     args = parser.parse_args()
 
     if args.daily_report:
@@ -613,6 +620,22 @@ def main():
 
     all_accounts, priorities = load_accounts()
     state = load_state()
+
+    if args.last_posts:
+        last_dates = state.get("last_post_dates", {})
+        if not last_dates:
+            print("No last post dates recorded yet — run the scraper a few times first.")
+            return
+        # Sort by date ascending (oldest first) so quiet accounts stand out at top
+        sorted_dates = sorted(last_dates.items(), key=lambda x: x[1] or "")
+        print(f"\n📅 Last post date per account ({len(sorted_dates)} tracked):\n")
+        for handle, d in sorted_dates:
+            prio = priorities.get(handle, "?")
+            print(f"  {d}  @{handle}  [{prio}]")
+        not_seen = [a for a in all_accounts if a not in last_dates]
+        if not_seen:
+            print(f"\n  ⏳ Not yet scraped ({len(not_seen)}): {', '.join(f'@{a}' for a in not_seen)}")
+        return
 
     if args.status:
         cursor = state["cursor"] % len(all_accounts) if all_accounts else 0
