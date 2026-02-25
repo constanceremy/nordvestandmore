@@ -850,9 +850,9 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
             # Fallback: if URL-based dedup missed, try name+date fuzzy match
             if not page_id:
                 ev_name = ev.get("event_name", "")
-                ev_date = ev.get("start_date", "")
+                ev_date = ev.get("start_date") or ""
                 for entry in all_entries:
-                    if entry.get("start_date", "")[:10] != ev_date[:10]:
+                    if not ev_date or (entry.get("start_date") or "")[:10] != ev_date[:10]:
                         continue
                     name_sim = similarity(ev_name, entry.get("name", ""))
                     if name_sim >= 0.80:
