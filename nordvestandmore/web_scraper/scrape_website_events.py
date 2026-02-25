@@ -3134,6 +3134,7 @@ def notion_existing_entries() -> tuple[dict, list]:
                 "source": source,
                 "start_date": start_date,
                 "location": location,
+                "start_time": start_time,
             }
             all_entries.append(entry)
             if url_val:
@@ -3443,6 +3444,7 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
                 all_entries,
                 source_mapping,
                 event_location=ev.get("location", ""),
+                event_time=ev.get("start_time", "") or ev.get("start_time_disp", ""),
             )
             if dupe:
                 ev["possible_duplicate"] = True
@@ -3511,6 +3513,7 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
                                 "source": site_key,
                                 "url": event_url,
                                 "location": ev.get("location", ""),
+                                "start_time": ev.get("start_time", "") or ev.get("start_time_disp", ""),
                             })
                     except Exception:
                         pass

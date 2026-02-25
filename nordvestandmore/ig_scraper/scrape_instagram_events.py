@@ -487,6 +487,8 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
             source = source_parts[0]["text"]["content"] if source_parts else ""
             location_parts = props.get("Location", {}).get("rich_text", [])
             location = location_parts[0]["text"]["content"] if location_parts else ""
+            time_parts = props.get("Start Time", {}).get("rich_text", [])
+            start_time = time_parts[0]["text"]["content"] if time_parts else ""
             # Dedup key: URL + date (no name — Gemini is non-deterministic)
             key = f"{url_val}|{start_date}"
             if url_val:
@@ -498,6 +500,7 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
                 "page_id": page["id"],
                 "url": url_val,
                 "location": location,
+                "start_time": start_time,
             })
         pages_fetched += 1
         if not data.get("has_more"):
@@ -854,6 +857,7 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 all_entries,
                 source_mapping,
                 event_location=ev.get("location", ""),
+                event_time=ev.get("start_time", ""),
             )
             if dupe:
                 ev["possible_duplicate"] = True
@@ -923,6 +927,7 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                             "page_id": nid,
                             "url": ev.get("url", ""),
                             "location": ev.get("location", ""),
+                            "start_time": ev.get("start_time", ""),
                         })
                 except Exception:
                     log(f"  Create failed for {ev.get('event_name')}")

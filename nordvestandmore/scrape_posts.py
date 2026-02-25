@@ -295,13 +295,15 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
             source = source_parts[0]["text"]["content"] if source_parts else ""
             location_parts = props.get("Location", {}).get("rich_text", [])
             location = location_parts[0]["text"]["content"] if location_parts else ""
+            time_parts = props.get("Start Time", {}).get("rich_text", [])
+            start_time = time_parts[0]["text"]["content"] if time_parts else ""
             key = f"{url_val}|{start_date}"
             if url_val:
                 key_to_page[key] = page["id"]
             all_entries.append({
                 "name": name, "start_date": start_date,
                 "source": source.lstrip("@"), "page_id": page["id"], "url": url_val,
-                "location": location,
+                "location": location, "start_time": start_time,
             })
         pages_fetched += 1
         if not data.get("has_more"):
@@ -517,6 +519,7 @@ def process_post(L, client, shortcode: str, post_url: str,
             ev.get("event_name", ""), ev.get("start_date", ""),
             account, all_entries, source_mapping,
             event_location=ev.get("location", ""),
+            event_time=ev.get("start_time", ""),
         )
         if dupe:
             ev["possible_duplicate"] = True
@@ -560,6 +563,7 @@ def process_post(L, client, shortcode: str, post_url: str,
                         "page_id": nid,
                         "url": ev.get("url", ""),
                         "location": ev.get("location", ""),
+                        "start_time": ev.get("start_time", ""),
                     })
             except Exception:
                 log(f"   ❌ Create failed for {ev.get('event_name')}")

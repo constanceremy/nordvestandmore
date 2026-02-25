@@ -268,25 +268,26 @@ def find_duplicate(
     existing_entries: list[dict],
     mapping: dict[str, set[str]],
     event_location: str = "",
+    event_time: str = "",
 ) -> dict | None:
     """
     Check if this event likely duplicates an existing Notion entry.
 
-    Rules:
-      1. Same date (required)
-      2. Name similarity >= 70%
-      3. AND at least one of:
-         - Source similarity >= 85% (or sources are related via mapping)
+    Rules (any match = duplicate):
+      A. Same date + similar name (≥70%) + one of:
+         - Source similarity >= 85% (or sources related via mapping)
          - Location similarity >= 85%
-         - Name similarity >= 90% (catch-all for near-identical names)
+         - Name similarity >= 90% (catch-all)
+      B. Same date + same time + same location (≥85%) — regardless of name
 
     Args:
         event_name: Name of the new event
         event_date: Start date (YYYY-MM-DD) of the new event
         event_source: Source identifier (IG handle or FB page name)
-        existing_entries: List of dicts with keys: name, start_date, source, page_id, location
+        existing_entries: List of dicts with keys: name, start_date, source, page_id, location, start_time
         mapping: Source mapping from load_source_mapping()
         event_location: Location/venue of the new event
+        event_time: Start time (HH:MM) of the new event
 
     Returns:
         The matching existing entry dict if a likely duplicate is found, else None.
@@ -302,7 +303,16 @@ def find_duplicate(
         if entry.get("start_date") != event_date:
             continue
 
-        # Must have similar name
+        # ── Rule B: same date + same time + same location ──
+        # Different names but same place at the same time = same event
+        entry_time = (entry.get("start_time") or "").strip()
+        if (event_time and entry_time and event_time == entry_time
+                and event_location and entry.get("location")):
+            loc_sim = similarity(event_location, entry.get("location", ""))
+            if loc_sim >= LOCATION_SIM_THRESHOLD:
+                return entry
+
+        # ── Rule A: same date + similar name + source/location/name catch-all ──
         name_sim = similarity(event_name, entry.get("name", ""))
         if name_sim < SIMILARITY_THRESHOLD:
             continue
