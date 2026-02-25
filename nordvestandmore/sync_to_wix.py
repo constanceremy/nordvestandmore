@@ -420,7 +420,8 @@ def sync_today(dry_run: bool = False):
     if not WIX_API_KEY or not WIX_SITE_ID:
         sys.exit("Missing WIX_API_KEY or WIX_SITE_ID")
 
-    today_str = date.today().isoformat()
+    today_obj = date.today()
+    today_str = today_obj.isoformat()
     log(f"⚡ Quick sync: today's events only ({today_str})")
 
     # 1. Read today's events from Notion
@@ -431,47 +432,62 @@ def sync_today(dry_run: bool = False):
     ]
     log(f"Found {len(today_events)} event(s) for today in Notion")
 
-    # 2. Find and remove today's events from Wix
+    # 2. Find and remove today's events + any past events from Wix
     wix_items = wix_get_all_items()
-    today_wix_ids = []
+    remove_ids = []
+    past_count = 0
+    today_count = 0
     for item in wix_items:
         item_data = item.get("data", {})
-        # Check the dateForWix field (ISO format) or startDate (readable)
+        item_id = item.get("id") or item.get("_id")
+        if not item_id:
+            continue
+
+        item_date = None
+        # Check the dateForWix field (ISO format)
         wix_date = item_data.get("dateForWix", {})
         if isinstance(wix_date, dict):
-            # {"$date": "2026-02-25T00:00:00Z"}
             raw = wix_date.get("$date", "")
-            if raw[:10] == today_str:
-                item_id = item.get("id") or item.get("_id")
-                if item_id:
-                    today_wix_ids.append(item_id)
-                continue
+            if raw[:10]:
+                try:
+                    item_date = date.fromisoformat(raw[:10])
+                except ValueError:
+                    pass
         # Fallback: check startDate field (readable like "February 25, 2026")
-        start_date_str = item_data.get("startDate", "")
-        if start_date_str:
-            try:
-                parsed = datetime.strptime(start_date_str, "%B %d, %Y").date()
-                if parsed.isoformat() == today_str:
-                    item_id = item.get("id") or item.get("_id")
-                    if item_id:
-                        today_wix_ids.append(item_id)
-            except (ValueError, TypeError):
-                pass
+        if item_date is None:
+            start_date_str = item_data.get("startDate", "")
+            if start_date_str:
+                try:
+                    item_date = datetime.strptime(start_date_str, "%B %d, %Y").date()
+                except (ValueError, TypeError):
+                    pass
+
+        if item_date is None:
+            continue
+
+        if item_date < today_obj:
+            remove_ids.append(item_id)
+            past_count += 1
+        elif item_date == today_obj:
+            remove_ids.append(item_id)
+            today_count += 1
+
+    log(f"Found {today_count} today's + {past_count} past item(s) to remove from Wix")
 
     if dry_run:
-        log(f"[DRY-RUN] Would remove {len(today_wix_ids)} today's item(s) from Wix")
+        log(f"[DRY-RUN] Would remove {len(remove_ids)} item(s) from Wix ({today_count} today + {past_count} past)")
         log(f"[DRY-RUN] Would insert {len(today_events)} today's event(s)")
         for ev in today_events:
             log(f"  [DRY-RUN] {ev['event_name']} ({ev['start_time'] or '?'})")
         return
 
-    if today_wix_ids:
-        log(f"Removing {len(today_wix_ids)} existing today's item(s) from Wix...")
-        removed = wix_bulk_remove(today_wix_ids)
+    if remove_ids:
+        log(f"Removing {len(remove_ids)} item(s) from Wix ({today_count} today + {past_count} past)...")
+        removed = wix_bulk_remove(remove_ids)
         log(f"  Removed {removed} item(s)")
         time.sleep(0.5)
     else:
-        log("No existing today's items in Wix to remove")
+        log("No items to remove from Wix")
 
     # 3. Insert today's events
     if not today_events:
