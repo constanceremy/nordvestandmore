@@ -2,11 +2,11 @@ name: Instagram Drip Scraper
 
 on:
   schedule:
-    # Every 60 minutes — with 5 accounts per run, covers all ~141
-    # accounts in ~28 hours (~1.2 days).  A cursor tracks position
+    # Every 45 minutes — with 5 accounts per run, covers all ~144
+    # accounts in ~21 hours (~0.9 days).  A cursor tracks position
     # so each run picks up where the last one left off.
     # Runs on self-hosted Mac runner → residential IP → no IG rate limits.
-    - cron: "0 * * * *"
+    - cron: "*/45 * * * *"
   workflow_dispatch:
     inputs:
       batch_size:
