@@ -520,7 +520,12 @@ def process_post(L, client, shortcode: str, post_url: str,
         )
         if dupe:
             ev["possible_duplicate"] = True
-            log(f"   ⚠️  Possible duplicate of: {dupe.get('name')} (from {dupe.get('source')})")
+            dupe_date = (dupe.get('start_date') or '')[:10]
+            dupe_loc = dupe.get('location', '')
+            dupe_info = f"{dupe.get('name')} | {dupe_date} | from {dupe.get('source')}"
+            if dupe_loc:
+                dupe_info += f" @ {dupe_loc}"
+            log(f"   ⚠️  Possible duplicate of: {dupe_info}")
         else:
             ev["possible_duplicate"] = False
 
