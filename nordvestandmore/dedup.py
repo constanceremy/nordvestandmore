@@ -267,16 +267,25 @@ def find_duplicate(
     event_source: str,
     existing_entries: list[dict],
     mapping: dict[str, set[str]],
+    event_location: str = "",
 ) -> dict | None:
     """
     Check if this event likely duplicates an existing Notion entry.
+
+    Rules:
+      1. Same date (required)
+      2. Name similarity >= 70%
+      3. AND at least one of:
+         - Source similarity >= 85% (or sources are related via mapping)
+         - Location similarity >= 85%
 
     Args:
         event_name: Name of the new event
         event_date: Start date (YYYY-MM-DD) of the new event
         event_source: Source identifier (IG handle or FB page name)
-        existing_entries: List of dicts with keys: name, start_date, source, page_id
+        existing_entries: List of dicts with keys: name, start_date, source, page_id, location
         mapping: Source mapping from load_source_mapping()
+        event_location: Location/venue of the new event
 
     Returns:
         The matching existing entry dict if a likely duplicate is found, else None.
@@ -284,22 +293,33 @@ def find_duplicate(
     if not event_name or not event_date:
         return None
 
+    SOURCE_SIM_THRESHOLD = 0.85
+    LOCATION_SIM_THRESHOLD = 0.85
+
     for entry in existing_entries:
         # Must have the same date
         if entry.get("start_date") != event_date:
             continue
 
-        # Check if sources are related (same venue across platforms)
-        if not are_sources_related(event_source, entry.get("source", ""), mapping):
-            # Even if sources aren't mapped, check for very high name similarity
-            name_sim = similarity(event_name, entry.get("name", ""))
-            if name_sim >= 0.85:
-                return entry
+        # Must have similar name
+        name_sim = similarity(event_name, entry.get("name", ""))
+        if name_sim < SIMILARITY_THRESHOLD:
             continue
 
-        # Sources are related — use lower similarity threshold
-        name_sim = similarity(event_name, entry.get("name", ""))
-        if name_sim >= SIMILARITY_THRESHOLD:
+        # Must match on source OR location
+        # Check source: either via mapping or fuzzy similarity
+        source_match = are_sources_related(event_source, entry.get("source", ""), mapping)
+        if not source_match:
+            source_sim = similarity(event_source, entry.get("source", ""))
+            source_match = source_sim >= SOURCE_SIM_THRESHOLD
+
+        if source_match:
             return entry
+
+        # Check location similarity
+        if event_location and entry.get("location"):
+            loc_sim = similarity(event_location, entry.get("location", ""))
+            if loc_sim >= LOCATION_SIM_THRESHOLD:
+                return entry
 
     return None

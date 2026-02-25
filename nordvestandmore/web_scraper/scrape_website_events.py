@@ -28,7 +28,7 @@ from bs4 import BeautifulSoup
 
 # Add parent dir to path for dedup import
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from dedup import load_source_mapping, find_duplicate, similarity
+from dedup import load_source_mapping, find_duplicate, similarity, are_sources_related
 from auto_tag import classify_event, is_not_event, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
 from fix_locations import clean_location
@@ -3119,6 +3119,8 @@ def notion_existing_entries() -> tuple[dict, list]:
             name = name_parts[0]["text"]["content"] if name_parts else ""
             source_parts = (props.get("Source") or {}).get("rich_text", [])
             source = source_parts[0]["text"]["content"] if source_parts else ""
+            location_parts = (props.get("Location") or {}).get("rich_text", [])
+            location = location_parts[0]["text"]["content"] if location_parts else ""
             date_prop = (props.get("Start Date") or {}).get("date") or {}
             start_date = date_prop.get("start", "")
             # Extract start time for dedup key (handles multiple time slots per day)
@@ -3131,6 +3133,7 @@ def notion_existing_entries() -> tuple[dict, list]:
                 "url": url_val or "",
                 "source": source,
                 "start_date": start_date,
+                "location": location,
             }
             all_entries.append(entry)
             if url_val:
@@ -3439,6 +3442,7 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
                 site_key,
                 all_entries,
                 source_mapping,
+                event_location=ev.get("location", ""),
             )
             if dupe:
                 ev["possible_duplicate"] = True
@@ -3453,15 +3457,23 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
             dedup_key_no_time = f"{event_url}##{ev.get('start_date', '')}"
             page_id = existing.get(dedup_key_no_time)
 
-        # Fallback: if URL-based dedup missed, try name+date fuzzy match
+        # Fallback: if URL-based dedup missed, try name+date+source/location fuzzy match
         if not page_id:
             ev_name = ev.get("event_name", "")
             ev_date = ev.get("start_date", "")
+            ev_loc = ev.get("location", "")
             for entry in all_entries:
                 if entry.get("start_date", "")[:10] != ev_date[:10]:
                     continue
                 name_sim = similarity(ev_name, entry.get("name", ""))
-                if name_sim >= 0.80:
+                if name_sim < 0.80:
+                    continue
+                # Also require source or location similarity
+                src_ok = are_sources_related(site_key, entry.get("source", ""), source_mapping) or \
+                         similarity(site_key, entry.get("source", "")) >= 0.85
+                loc_ok = ev_loc and entry.get("location") and \
+                         similarity(ev_loc, entry.get("location", "")) >= 0.85
+                if src_ok or loc_ok:
                     page_id = entry.get("page_id")
                     if DEBUG:
                         log(f"    🔗 Fuzzy name match ({name_sim:.0%}): '{entry.get('name')}' → updating instead of creating")
@@ -3492,6 +3504,7 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
                                 "start_date": ev.get("start_date", ""),
                                 "source": site_key,
                                 "url": event_url,
+                                "location": ev.get("location", ""),
                             })
                     except Exception:
                         pass
