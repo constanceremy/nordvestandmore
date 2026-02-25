@@ -228,13 +228,24 @@ def _notion_to_wix(ev: dict) -> dict:
             # Human-readable date: "May 27, 2026"
             readable_date = dt.strftime("%B %d, %Y").replace(" 0", " ")
             wix["startDate"] = readable_date
-            # Wix DATETIME format
-            wix["dateForWix"] = {"$date": dt.strftime("%Y-%m-%dT00:00:00Z")}
-            wix["startDateForWix"] = {"$date": dt.strftime("%Y-%m-%dT00:00:00Z")}
-            # Sort by date: "May 27, 2026 6:00 PM"
-            time_str = ev["start_time"] or ""
-            wix["sortByDate"] = f"{readable_date} {time_str}".strip()
-            wix["dateAndTime"] = wix["sortByDate"]
+            # Wix DATETIME format — include time for proper sorting
+            time_str = (ev["start_time"] or "").strip()
+            time_24h = "00:00"
+            if time_str:
+                # Parse time to 24h format for sorting (handles "18:00", "6:00pm", etc.)
+                for fmt in ("%H:%M", "%H.%M", "%I:%M%p", "%I:%M %p", "%I%p", "%I %p"):
+                    try:
+                        t = datetime.strptime(time_str.lower().replace(".", ":"), fmt)
+                        time_24h = t.strftime("%H:%M")
+                        break
+                    except ValueError:
+                        continue
+            wix["dateForWix"] = {"$date": dt.strftime(f"%Y-%m-%dT{time_24h}:00Z")}
+            wix["startDateForWix"] = {"$date": dt.strftime(f"%Y-%m-%dT{time_24h}:00Z")}
+            # Sort field: ISO format for correct chronological ordering
+            wix["sortByDate"] = f"{dt.strftime('%Y-%m-%d')} {time_24h}"
+            # Human-readable date+time for display
+            wix["dateAndTime"] = f"{readable_date} {time_str}".strip()
         except ValueError:
             pass
 
