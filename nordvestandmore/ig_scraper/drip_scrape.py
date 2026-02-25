@@ -40,6 +40,28 @@ STATE_FILE = os.environ.get("IG_STATE_FILE",
 SUMMARY_FILE = os.environ.get("GITHUB_STEP_SUMMARY", "")
 
 BATCH_SIZE_DEFAULT = 3
+NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "")
+
+
+# ── Notifications ──
+
+def _ntfy(title: str, message: str, priority: str = "low", tags: str = "camera"):
+    """Send a push notification via ntfy.sh (non-blocking, best-effort)."""
+    if not NTFY_TOPIC:
+        return
+    try:
+        import subprocess
+        subprocess.run([
+            "curl", "-s",
+            "-H", f"Title: {title}",
+            "-H", f"Priority: {priority}",
+            "-H", f"Tags: {tags}",
+            "-d", message,
+            f"https://ntfy.sh/{NTFY_TOPIC}",
+        ], timeout=10, check=False,
+           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
 
 
 # ── State management ──
@@ -334,6 +356,13 @@ def run_scrape(batch_size: int):
     print(f"📸 Drip batch: accounts {start_pos + 1}–{start_pos + len(batch)} of {len(all_accounts)}")
     print(f"   Accounts: {', '.join(f'@{a}' for a in batch)}")
 
+    # Notify: batch starting
+    _ntfy(
+        f"IG Drip: scraping {len(batch)} accounts",
+        f"Accounts {start_pos + 1}–{start_pos + len(batch)} of {len(all_accounts)}\n"
+        + ", ".join(f"@{a}" for a in batch),
+    )
+
     # ── Import and set up the IG scraper ──
     sys.path.insert(0, SCRIPT_DIR)
     sys.path.insert(0, PARENT_DIR)
@@ -426,6 +455,9 @@ def run_scrape(batch_size: int):
             # Format latest post date for display
             date_info = f", latest: {latest_date}" if latest_date else ""
 
+            # Build a short status line for this account
+            elapsed_total = _fmt_duration(time.time() - run_start)
+
             if stats.get("error"):
                 reason = f"error after {duration:.1f}s"
                 print(f"  ⚠️  @{account}: {reason}")
@@ -434,6 +466,7 @@ def run_scrape(batch_size: int):
                     "reason": reason,
                     "time": datetime.now(timezone.utc).strftime("%H:%M UTC"),
                 }
+                acct_status = f"❌ @{account}: {reason}"
             elif posts == 0:
                 # Still 0 after retry — show profile total + latest post date
                 # so we can tell if the account is genuinely quiet or rate-limited
@@ -443,6 +476,7 @@ def run_scrape(batch_size: int):
                 results[account] = {"ok": True, "posts": 0, "events": 0, "created": 0, "note": reason}
                 state["successes"] += 1
                 state["failures"].pop(account, None)
+                acct_status = f"💤 @{account}: 0 recent posts"
             else:
                 print(f"  ✅ @{account}: {posts}/{profile_total} posts{date_info}, {evts} events, {cr} new [{duration:.1f}s]")
                 results[account] = {
@@ -454,6 +488,14 @@ def run_scrape(batch_size: int):
                 state["successes"] += 1
                 # Clear from failures if it succeeded this time
                 state["failures"].pop(account, None)
+                acct_status = f"✅ @{account}: {posts} posts, {evts} events, {cr} new"
+
+            # Per-account progress notification
+            _ntfy(
+                f"[{i}/{len(batch)}] {acct_status}",
+                f"Elapsed: {elapsed_total}",
+                priority="min",
+            )
 
             state["total_scraped"] += 1
 
@@ -489,6 +531,21 @@ def run_scrape(batch_size: int):
     print(f"   Delays (20s × {len(batch)-1}):    {_fmt_duration(time_in_delays)}")
     if time_in_retries > 0:
         print(f"   Retry waits (30s):    {_fmt_duration(time_in_retries)}")
+
+    # Completion notification
+    created_total = sum(r.get("created", 0) for r in results.values() if r.get("ok"))
+    events_total = sum(r.get("events", 0) for r in results.values() if r.get("ok"))
+    completion_msg = (
+        f"✅ {ok} ok, ❌ {fail} failed | {_fmt_duration(total_elapsed)}\n"
+        f"Events: {events_total} found, {created_total} new\n"
+        f"Notion: {_fmt_duration(notion_load_time)} | Scrape: {_fmt_duration(time_scraping)} | Delays: {_fmt_duration(time_in_delays)}"
+    )
+    _ntfy(
+        f"IG Drip done: {ok}/{len(batch)} ok in {_fmt_duration(total_elapsed)}",
+        completion_msg,
+        priority="low" if fail == 0 else "default",
+        tags="camera,white_check_mark" if fail == 0 else "camera,warning",
+    )
 
     if fail:
         sys.exit(1)
