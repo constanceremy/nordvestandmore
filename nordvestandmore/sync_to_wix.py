@@ -407,6 +407,55 @@ def sync(dry_run: bool = False):
     log(f"✅ Sync complete: {inserted} events pushed to Wix")
 
 
+def _extract_wix_item_date(item_data: dict) -> date | None:
+    """Try to extract a date from a Wix item, checking multiple possible field names."""
+    import re as _re
+
+    # Try various date field names (Wix may camelCase or snake_case them)
+    for field in ("dateForWix", "date_for_wix", "startDateForWix", "start_date_for_wix"):
+        val = item_data.get(field)
+        if isinstance(val, dict):
+            raw = val.get("$date", "")
+            if raw and len(raw) >= 10:
+                try:
+                    return date.fromisoformat(raw[:10])
+                except ValueError:
+                    pass
+        elif isinstance(val, str) and len(val) >= 10:
+            try:
+                return date.fromisoformat(val[:10])
+            except ValueError:
+                pass
+
+    # Try readable startDate: "February 25, 2026"
+    for field in ("startDate", "start_date"):
+        val = item_data.get(field, "")
+        if not val or not isinstance(val, str):
+            continue
+        # Try "Month Day, Year" format
+        try:
+            return datetime.strptime(val, "%B %d, %Y").date()
+        except (ValueError, TypeError):
+            pass
+        # Try ISO format
+        try:
+            return date.fromisoformat(val[:10])
+        except (ValueError, TypeError):
+            pass
+
+    # Last resort: scan all values for ISO date patterns
+    for key, val in item_data.items():
+        if isinstance(val, dict) and "$date" in val:
+            raw = val["$date"]
+            if raw and len(raw) >= 10:
+                try:
+                    return date.fromisoformat(raw[:10])
+                except ValueError:
+                    pass
+
+    return None
+
+
 def sync_today(dry_run: bool = False):
     """
     Quick sync: only replace today's events in Wix.
@@ -434,35 +483,32 @@ def sync_today(dry_run: bool = False):
 
     # 2. Find and remove today's events + any past events from Wix
     wix_items = wix_get_all_items()
+    log(f"Fetched {len(wix_items)} total item(s) from Wix")
+
+    # Debug: show date fields from first 3 items so we know the data shape
+    for sample in wix_items[:3]:
+        sd = sample.get("data", {})
+        log(f"  DEBUG item keys: {sorted(sd.keys())}")
+        log(f"  DEBUG dateForWix={sd.get('dateForWix')!r}, "
+            f"startDate={sd.get('startDate')!r}, "
+            f"start_date={sd.get('start_date')!r}, "
+            f"date_for_wix={sd.get('date_for_wix')!r}")
+        break  # only need one sample
+
     remove_ids = []
     past_count = 0
     today_count = 0
+    no_date_count = 0
     for item in wix_items:
         item_data = item.get("data", {})
         item_id = item.get("id") or item.get("_id")
         if not item_id:
             continue
 
-        item_date = None
-        # Check the dateForWix field (ISO format)
-        wix_date = item_data.get("dateForWix", {})
-        if isinstance(wix_date, dict):
-            raw = wix_date.get("$date", "")
-            if raw[:10]:
-                try:
-                    item_date = date.fromisoformat(raw[:10])
-                except ValueError:
-                    pass
-        # Fallback: check startDate field (readable like "February 25, 2026")
-        if item_date is None:
-            start_date_str = item_data.get("startDate", "")
-            if start_date_str:
-                try:
-                    item_date = datetime.strptime(start_date_str, "%B %d, %Y").date()
-                except (ValueError, TypeError):
-                    pass
+        item_date = _extract_wix_item_date(item_data)
 
         if item_date is None:
+            no_date_count += 1
             continue
 
         if item_date < today_obj:
@@ -471,6 +517,9 @@ def sync_today(dry_run: bool = False):
         elif item_date == today_obj:
             remove_ids.append(item_id)
             today_count += 1
+
+    if no_date_count:
+        log(f"  ⚠️ {no_date_count} item(s) had no parseable date")
 
     log(f"Found {today_count} today's + {past_count} past item(s) to remove from Wix")
 
