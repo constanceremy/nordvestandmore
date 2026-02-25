@@ -211,22 +211,33 @@ def parse_danish_date(text: str) -> str | None:
 def parse_time_range(text: str) -> tuple[str | None, str | None]:
     """
     Parse time ranges from text. Returns (start_time, end_time) in HH:MM 24h format.
-    Handles: "13.30", "kl. 13", "17.00 - 20.00", "Kl. 19 - 21", etc.
+    Handles: "13.30", "kl. 13", "17.00 - 20.00", "Kl. 19 - 21",
+             "Kl. 19 - 20.30" (bare start hour + end with minutes), etc.
     """
-    # Look for HH.MM or HH:MM patterns
-    times = re.findall(r"(\d{1,2})[.:](\d{2})", text)
-    if len(times) >= 2:
-        start = f"{int(times[0][0]):02d}:{times[0][1]}"
-        end = f"{int(times[1][0]):02d}:{times[1][1]}"
+    # ── Range with optional "Kl." prefix ──
+    # Handles: "Kl. 19 - 20.30", "Kl. 17.00 - 20.00", "Kl. 19 - 21", "19.00 - 20.30"
+    range_match = re.search(
+        r"(?:[Kk]l\.?\s*)?"                     # Optional "Kl."
+        r"(\d{1,2})(?:[.:](\d{2}))?"             # Start: hour, optional minutes
+        r"\s*[-–]\s*"                             # Separator
+        r"(\d{1,2})(?:[.:](\d{2}))?",            # End: hour, optional minutes
+        text,
+    )
+    if range_match:
+        sh, sm, eh, em = range_match.groups()
+        start = f"{int(sh):02d}:{sm or '00'}"
+        end = f"{int(eh):02d}:{em or '00'}"
         return start, end
-    elif len(times) == 1:
-        start = f"{int(times[0][0]):02d}:{times[0][1]}"
-        return start, None
 
-    # Try bare hours: "Kl. 19 - 21"
-    m = re.search(r"[Kk]l\.?\s*(\d{1,2})\s*[-–]\s*(\d{1,2})", text)
-    if m:
-        return f"{int(m.group(1)):02d}:00", f"{int(m.group(2)):02d}:00"
+    # ── Single time with minutes: "13.30" ──
+    single = re.search(r"(\d{1,2})[.:](\d{2})", text)
+    if single:
+        return f"{int(single.group(1)):02d}:{single.group(2)}", None
+
+    # ── Single bare hour: "Kl. 19" ──
+    bare = re.search(r"[Kk]l\.?\s*(\d{1,2})", text)
+    if bare:
+        return f"{int(bare.group(1)):02d}:00", None
 
     return None, None
 
