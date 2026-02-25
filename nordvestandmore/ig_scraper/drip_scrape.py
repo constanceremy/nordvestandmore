@@ -101,8 +101,15 @@ def load_accounts() -> tuple[list[str], dict[str, str]]:
     falling back to accounts.txt.
 
     Returns: (accounts_list, priority_map)
-        - accounts_list: list of IG handles (no @)
-        - priority_map: {handle: "high"|"medium"|"low"}
+        - accounts_list: list of IG handles (no @), with "skip" accounts excluded
+        - priority_map: {handle: "high"|"medium"|"low"|"very_low"}
+
+    Priority tiers:
+        high      — guaranteed 1 slot per batch (fastest coverage)
+        medium    — scraped every cycle (normal, default)
+        low       — scraped every 3rd cycle (~3× less frequent, DEFAULT)
+        very_low  — scraped every 5th cycle (~5× less frequent)
+        skip      — never scraped (excluded from list entirely)
     """
     priorities: dict[str, str] = {}
 
@@ -111,16 +118,22 @@ def load_accounts() -> tuple[list[str], dict[str, str]]:
         from dedup import _load_csv_rows
         rows = _load_csv_rows()
         accounts = []
+        skipped = 0
         for row in rows:
             ig = (row.get("instagram") or "").strip().lstrip("@")
             if ig:
-                accounts.append(ig)
                 prio = (row.get("priority") or "").strip().lower()
-                if prio in ("high", "medium", "low"):
+                if prio == "skip":
+                    skipped += 1
+                    continue  # excluded entirely
+                if prio in ("high", "medium", "low", "very_low"):
                     priorities[ig] = prio
                 else:
-                    priorities[ig] = "medium"
-        if accounts:
+                    priorities[ig] = "low"
+                accounts.append(ig)
+        if accounts or skipped:
+            if skipped:
+                print(f"   ({skipped} accounts skipped — priority=skip)")
             return accounts, priorities
     except Exception as e:
         print(f"⚠️  Could not load from Google Sheets: {e}")
@@ -133,7 +146,7 @@ def load_accounts() -> tuple[list[str], dict[str, str]]:
             if line and not line.startswith("#"):
                 handle = line.lstrip("@")
                 accounts.append(handle)
-                priorities[handle] = "medium"
+                priorities[handle] = "low"
     return accounts, priorities
 
 
@@ -141,8 +154,9 @@ def get_batch(state: dict, batch_size: int = BATCH_SIZE_DEFAULT) -> tuple[list[s
     """Get the next batch of accounts starting from the cursor.
 
     High-priority accounts get 1 guaranteed slot per batch (rotated).
-    Remaining slots filled with medium/low accounts from the cursor.
+    Remaining slots filled with medium/low/very_low accounts from the cursor.
     Low accounts only scraped every 3rd cycle.
+    Very-low accounts only scraped every 5th cycle.
     Batch NEVER exceeds batch_size.
 
     Returns: (batch, new_cursor)
@@ -155,18 +169,20 @@ def get_batch(state: dict, batch_size: int = BATCH_SIZE_DEFAULT) -> tuple[list[s
     regular = [a for a in all_accounts if priorities.get(a) != "high"]
     N = len(regular)
 
-    prio_counts = {"high": len(high), "medium": 0, "low": 0}
+    prio_counts = {"high": len(high), "medium": 0, "low": 0, "very_low": 0}
     for p in priorities.values():
-        if p in ("medium", "low"):
+        if p in ("medium", "low", "very_low"):
             prio_counts[p] += 1
-    print(f"   Priorities: {prio_counts['high']} high, {prio_counts['medium']} medium, {prio_counts['low']} low")
+    print(f"   Priorities: {prio_counts['high']} high, {prio_counts['medium']} medium, "
+          f"{prio_counts['low']} low, {prio_counts['very_low']} very_low")
 
     if N == 0:
         return high[:batch_size], 0
 
-    # Low-priority accounts only scraped every 3rd full cycle
+    # Low accounts scraped every 3rd full cycle; very_low every 5th
     cycle_num = state.get("cursor", 0) // N if N else 0
     skip_low = (cycle_num % 3) != 0
+    skip_very_low = (cycle_num % 5) != 0
 
     start = state["cursor"] % N
 
@@ -186,7 +202,10 @@ def get_batch(state: dict, batch_size: int = BATCH_SIZE_DEFAULT) -> tuple[list[s
         checked += 1
         cursor_advance += 1
 
-        if skip_low and priorities.get(account) == "low":
+        prio = priorities.get(account)
+        if skip_low and prio == "low":
+            continue
+        if skip_very_low and prio == "very_low":
             continue
         batch.append(account)
 
@@ -600,7 +619,9 @@ def main():
         failures = state.get("failures", {})
         high_count = sum(1 for p in priorities.values() if p == "high")
         low_count = sum(1 for p in priorities.values() if p == "low")
-        print(f"📸 Cursor: {cursor}/{len(all_accounts)} ({high_count} high, {low_count} low)")
+        very_low_count = sum(1 for p in priorities.values() if p == "very_low")
+        print(f"📸 Cursor: {cursor}/{len(all_accounts)} "
+              f"({high_count} high, {low_count} low, {very_low_count} very_low)")
         print(f"   Next: @{all_accounts[cursor]}")
         print(f"   Scraped this cycle: {state.get('total_scraped', 0)}")
         print(f"   Successes: {state.get('successes', 0)}")
