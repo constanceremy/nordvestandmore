@@ -140,9 +140,10 @@ def load_accounts() -> tuple[list[str], dict[str, str]]:
 def get_batch(state: dict, batch_size: int = BATCH_SIZE_DEFAULT) -> tuple[list[str], int]:
     """Get the next batch of accounts starting from the cursor.
 
-    High-priority accounts are always included in every batch.
-    Remaining slots are filled with medium/low accounts from the cursor.
-    Low accounts are only scraped every 3rd cycle.
+    High-priority accounts get 1 guaranteed slot per batch (rotated).
+    Remaining slots filled with medium/low accounts from the cursor.
+    Low accounts only scraped every 3rd cycle.
+    Batch NEVER exceeds batch_size.
 
     Returns: (batch, new_cursor)
     """
@@ -150,12 +151,16 @@ def get_batch(state: dict, batch_size: int = BATCH_SIZE_DEFAULT) -> tuple[list[s
     if not all_accounts:
         return [], 0
 
-    # Separate high-priority accounts (always scraped)
     high = [a for a in all_accounts if priorities.get(a) == "high"]
-
-    # Regular accounts (medium + low) for cursor-based rotation
     regular = [a for a in all_accounts if priorities.get(a) != "high"]
     N = len(regular)
+
+    prio_counts = {"high": len(high), "medium": 0, "low": 0}
+    for p in priorities.values():
+        if p in ("medium", "low"):
+            prio_counts[p] += 1
+    print(f"   Priorities: {prio_counts['high']} high, {prio_counts['medium']} medium, {prio_counts['low']} low")
+
     if N == 0:
         return high[:batch_size], 0
 
@@ -164,9 +169,15 @@ def get_batch(state: dict, batch_size: int = BATCH_SIZE_DEFAULT) -> tuple[list[s
     skip_low = (cycle_num % 3) != 0
 
     start = state["cursor"] % N
-    remaining_slots = max(0, batch_size - len(high))
 
-    batch = list(high)  # Always include high-priority
+    # High-priority: rotate through them, 1 per batch
+    batch: list[str] = []
+    if high:
+        high_cursor = state.get("high_cursor", 0) % len(high)
+        batch.append(high[high_cursor])
+        state["high_cursor"] = (high_cursor + 1) % len(high)
+
+    # Fill remaining slots with regular accounts
     cursor_advance = 0
     checked = 0
     while len(batch) < batch_size and checked < N:
