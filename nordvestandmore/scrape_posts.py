@@ -293,12 +293,15 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
             start_date = date_obj["start"] if date_obj else ""
             source_parts = props.get("Source", {}).get("rich_text", [])
             source = source_parts[0]["text"]["content"] if source_parts else ""
+            location_parts = props.get("Location", {}).get("rich_text", [])
+            location = location_parts[0]["text"]["content"] if location_parts else ""
             key = f"{url_val}|{start_date}"
             if url_val:
                 key_to_page[key] = page["id"]
             all_entries.append({
                 "name": name, "start_date": start_date,
                 "source": source.lstrip("@"), "page_id": page["id"], "url": url_val,
+                "location": location,
             })
         pages_fetched += 1
         if not data.get("has_more"):
@@ -513,10 +516,16 @@ def process_post(L, client, shortcode: str, post_url: str,
         dupe = find_duplicate(
             ev.get("event_name", ""), ev.get("start_date", ""),
             account, all_entries, source_mapping,
+            event_location=ev.get("location", ""),
         )
         if dupe:
             ev["possible_duplicate"] = True
-            log(f"   ⚠️  Possible duplicate of: {dupe.get('name')} (from {dupe.get('source')})")
+            dupe_date = (dupe.get('start_date') or '')[:10]
+            dupe_loc = dupe.get('location', '')
+            dupe_info = f"{dupe.get('name')} | {dupe_date} | from {dupe.get('source')}"
+            if dupe_loc:
+                dupe_info += f" @ {dupe_loc}"
+            log(f"   ⚠️  Possible duplicate of: {dupe_info}")
         else:
             ev["possible_duplicate"] = False
 
@@ -550,6 +559,7 @@ def process_post(L, client, shortcode: str, post_url: str,
                         "source": account,
                         "page_id": nid,
                         "url": ev.get("url", ""),
+                        "location": ev.get("location", ""),
                     })
             except Exception:
                 log(f"   ❌ Create failed for {ev.get('event_name')}")

@@ -27,7 +27,7 @@ import requests
 
 # Add parent dir to path for shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from dedup import load_source_mapping, find_duplicate, load_fb_to_ig_map, _extract_fb_id, similarity
+from dedup import load_source_mapping, find_duplicate, load_fb_to_ig_map, _extract_fb_id, similarity, are_sources_related
 from auto_tag import classify_event, is_not_event, is_deal, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
 from deals_db import push_to_deals_db
@@ -834,6 +834,8 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
             start_date = date_obj["start"] if date_obj else ""
             source_parts = props.get("Source", {}).get("rich_text", [])
             source = source_parts[0]["text"]["content"] if source_parts else ""
+            location_parts = props.get("Location", {}).get("rich_text", [])
+            location = location_parts[0]["text"]["content"] if location_parts else ""
             if url_val:
                 url_to_page[url_val] = page["id"]
             all_entries.append({
@@ -842,6 +844,7 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
                 "source": source.lstrip("@"),
                 "page_id": page["id"],
                 "url": url_val,
+                "location": location,
             })
         pages_fetched += 1
         if not data.get("has_more"):
@@ -1251,26 +1254,40 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                 page_name,
                 all_entries,
                 source_mapping,
+                event_location=ev.get("location", ""),
             )
             if dupe:
                 ev["possible_duplicate"] = True
                 flagged_dupes += 1
-                log(f"    ⚠️  Possible duplicate of: {dupe.get('name')} (from {dupe.get('source')})")
+                dupe_date = (dupe.get('start_date') or '')[:10]
+                dupe_loc = dupe.get('location', '')
+                dupe_info = f"{dupe.get('name')} | {dupe_date} | from {dupe.get('source')}"
+                if dupe_loc:
+                    dupe_info += f" @ {dupe_loc}"
+                log(f"    ⚠️  Possible duplicate of: {dupe_info}")
             else:
                 ev["possible_duplicate"] = False
 
             dedup_key = make_dedup_key(ev)
             page_id = existing.get(dedup_key)
 
-            # Fallback: if URL-based dedup missed, try name+date fuzzy match
+            # Fallback: if URL-based dedup missed, try name+date+source/location fuzzy match
             if not page_id:
                 ev_name = ev.get("event_name", "")
                 ev_date = ev.get("start_date", "")
+                ev_loc = ev.get("location", "")
                 for entry in all_entries:
                     if entry.get("start_date", "")[:10] != ev_date[:10]:
                         continue
                     name_sim = similarity(ev_name, entry.get("name", ""))
-                    if name_sim >= 0.80:
+                    if name_sim < 0.80:
+                        continue
+                    # Also require source or location similarity
+                    src_ok = are_sources_related(page_name, entry.get("source", ""), source_mapping) or \
+                             similarity(page_name, entry.get("source", "")) >= 0.85
+                    loc_ok = ev_loc and entry.get("location") and \
+                             similarity(ev_loc, entry.get("location", "")) >= 0.85
+                    if src_ok or loc_ok:
                         page_id = entry.get("page_id")
                         if DEBUG:
                             log(f"    🔗 Fuzzy name match ({name_sim:.0%}): '{entry.get('name')}' → updating")
@@ -1305,6 +1322,7 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                             "source": page_name,
                             "page_id": nid,
                             "url": event_url,
+                            "location": ev.get("location", ""),
                         })
                 except Exception:
                     log(f"  Create failed for {ev.get('event_name')}")
