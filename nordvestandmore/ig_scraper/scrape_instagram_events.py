@@ -579,8 +579,8 @@ def build_notion_props(ev: dict, is_update: bool = False) -> dict:
             "rich_text": [{"text": {"content": ev["description"][:2000]}}]
         }
 
-    # Possible Duplicate (checkbox)
-    if ev.get("possible_duplicate") is not None:
+    # Possible Duplicate (checkbox) — only set on create, preserve manual review on update
+    if ev.get("possible_duplicate") is not None and not is_update:
         props["Possible Duplicate"] = {"checkbox": bool(ev["possible_duplicate"])}
 
     # Instagramhandle (rich_text) — the source IG handle
@@ -906,7 +906,7 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 try:
                     r.raise_for_status()
                     updated += 1
-                    log(f"    🔄 Already exists, updated: {ev.get('event_name')} | {ev.get('start_date')} | {ev.get('location')}")
+                    log(f"    ✓ Already in Notion: {ev.get('event_name')} | {ev.get('start_date')} | {ev.get('location')}")
                 except Exception:
                     log(f"    ❌ Update failed: {ev.get('event_name')}")
             else:

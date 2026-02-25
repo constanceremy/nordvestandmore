@@ -350,7 +350,8 @@ def build_notion_props(ev: dict, is_update: bool = False) -> dict:
     # Description — only set on create, preserve manual edits on update
     if ev.get("description") and not is_update:
         props["Description"] = {"rich_text": [{"text": {"content": ev["description"][:2000]}}]}
-    if ev.get("possible_duplicate") is not None:
+    # Possible Duplicate — only set on create, preserve manual review on update
+    if ev.get("possible_duplicate") is not None and not is_update:
         props["Possible Duplicate"] = {"checkbox": bool(ev["possible_duplicate"])}
     if ev.get("ig_handle"):
         props["Instagramhandle"] = {"rich_text": [{"text": {"content": ev["ig_handle"][:2000]}}]}
