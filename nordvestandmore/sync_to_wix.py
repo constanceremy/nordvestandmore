@@ -182,7 +182,25 @@ def read_notion_events() -> list[dict]:
         payload["start_cursor"] = data["next_cursor"]
 
     log(f"Read {len(events)} publishable events from Notion ({pages_fetched} pages)")
-    return events
+
+    # Deduplicate: same event name + same date + same time = keep first only
+    seen: set[tuple] = set()
+    unique_events = []
+    dupes_removed = 0
+    for ev in events:
+        key = (
+            ev["event_name"].strip().lower(),
+            ev["start_date"][:10],
+            (ev.get("start_time") or "").strip(),
+        )
+        if key in seen:
+            dupes_removed += 1
+            continue
+        seen.add(key)
+        unique_events.append(ev)
+    if dupes_removed:
+        log(f"  Removed {dupes_removed} duplicate event(s) (same name + date + time)")
+    return unique_events
 
 
 # ────────────────── Wix: data operations ──────────────────
@@ -485,20 +503,17 @@ def sync_today(dry_run: bool = False):
     wix_items = wix_get_all_items()
     log(f"Fetched {len(wix_items)} total item(s) from Wix")
 
-    # Debug: show date fields from first 3 items so we know the data shape
-    for sample in wix_items[:3]:
-        sd = sample.get("data", {})
-        log(f"  DEBUG item keys: {sorted(sd.keys())}")
-        log(f"  DEBUG dateForWix={sd.get('dateForWix')!r}, "
-            f"startDate={sd.get('startDate')!r}, "
-            f"start_date={sd.get('start_date')!r}, "
-            f"date_for_wix={sd.get('date_for_wix')!r}")
-        break  # only need one sample
+    # Build a set of today's event names for fallback matching
+    today_event_names = {
+        ev["event_name"].strip().lower()
+        for ev in today_events
+        if ev.get("event_name")
+    }
 
     remove_ids = []
     past_count = 0
     today_count = 0
-    no_date_count = 0
+    name_match_count = 0
     for item in wix_items:
         item_data = item.get("data", {})
         item_id = item.get("id") or item.get("_id")
@@ -507,31 +522,33 @@ def sync_today(dry_run: bool = False):
 
         item_date = _extract_wix_item_date(item_data)
 
-        if item_date is None:
-            no_date_count += 1
-            continue
+        if item_date is not None:
+            if item_date < today_obj:
+                remove_ids.append(item_id)
+                past_count += 1
+                continue
+            elif item_date == today_obj:
+                remove_ids.append(item_id)
+                today_count += 1
+                continue
 
-        if item_date < today_obj:
+        # Fallback: match by event name (catches items where date parsing failed)
+        item_name = (item_data.get("eventName") or item_data.get("title") or "").strip().lower()
+        if item_name and item_name in today_event_names and item_id not in remove_ids:
             remove_ids.append(item_id)
-            past_count += 1
-        elif item_date == today_obj:
-            remove_ids.append(item_id)
-            today_count += 1
+            name_match_count += 1
 
-    if no_date_count:
-        log(f"  ⚠️ {no_date_count} item(s) had no parseable date")
-
-    log(f"Found {today_count} today's + {past_count} past item(s) to remove from Wix")
+    log(f"Found {today_count} today's + {past_count} past + {name_match_count} name-matched item(s) to remove from Wix")
 
     if dry_run:
-        log(f"[DRY-RUN] Would remove {len(remove_ids)} item(s) from Wix ({today_count} today + {past_count} past)")
+        log(f"[DRY-RUN] Would remove {len(remove_ids)} item(s) from Wix ({today_count} today + {past_count} past + {name_match_count} name-matched)")
         log(f"[DRY-RUN] Would insert {len(today_events)} today's event(s)")
         for ev in today_events:
             log(f"  [DRY-RUN] {ev['event_name']} ({ev['start_time'] or '?'})")
         return
 
     if remove_ids:
-        log(f"Removing {len(remove_ids)} item(s) from Wix ({today_count} today + {past_count} past)...")
+        log(f"Removing {len(remove_ids)} item(s) from Wix ({today_count} today + {past_count} past + {name_match_count} name-matched)...")
         removed = wix_bulk_remove(remove_ids)
         log(f"  Removed {removed} item(s)")
         time.sleep(0.5)
