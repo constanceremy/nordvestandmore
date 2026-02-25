@@ -981,7 +981,8 @@ def main():
             for k in totals:
                 totals[k] += stats.get(k, 0)
             log(f"  ✅ Done with @{account}")
-            time.sleep(2)
+            if acct_idx < len(accounts):
+                time.sleep(20)  # Match drip scraper delay to avoid rate limits
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
