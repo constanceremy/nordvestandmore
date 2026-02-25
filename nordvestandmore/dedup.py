@@ -278,6 +278,7 @@ def find_duplicate(
       3. AND at least one of:
          - Source similarity >= 85% (or sources are related via mapping)
          - Location similarity >= 85%
+         - Name similarity >= 90% (catch-all for near-identical names)
 
     Args:
         event_name: Name of the new event
@@ -306,7 +307,11 @@ def find_duplicate(
         if name_sim < SIMILARITY_THRESHOLD:
             continue
 
-        # Must match on source OR location
+        # Catch-all: very high name similarity alone is enough
+        if name_sim >= 0.90:
+            return entry
+
+        # Otherwise must match on source OR location
         # Check source: either via mapping or fuzzy similarity
         source_match = are_sources_related(event_source, entry.get("source", ""), mapping)
         if not source_match:
