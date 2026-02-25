@@ -393,14 +393,32 @@ def is_multi_day_event(text: str) -> bool:
     Facebook shows multi-day events like:
       "FRI, MAR 27 AT 8 AM – SUN, MAR 29 AT 3 PM"
       "MAR 27 – MAR 29"
+      "FEBRUARY 28 – MARCH 2"
+      "FEB 28 - MAR 2"
     """
-    # Pattern: two dates separated by – or -
+    # Pattern 1: two abbreviated dates separated by – or -
     date_pat = r"(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?\s+\d{1,2}"
     multi = re.search(
         date_pat + r".*?[–\-]\s*(?:(?:MON|TUE|WED|THU|FRI|SAT|SUN)[A-Z]*,?\s+)?" + date_pat,
         text, re.IGNORECASE,
     )
-    return bool(multi)
+    if multi:
+        return True
+
+    # Pattern 2: full month names "February 28 – March 2"
+    full_date_pat = r"(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}"
+    multi2 = re.search(
+        full_date_pat + r".*?[–\-]\s*" + full_date_pat,
+        text, re.IGNORECASE,
+    )
+    if multi2:
+        return True
+
+    # Pattern 3: "3 days" or "X-day event" or "weekend" hints
+    if re.search(r"\b\d+\s*days?\b", text, re.IGNORECASE):
+        return True
+
+    return False
 
 
 def fetch_event_page_text(event_url: str) -> str | None:
@@ -469,33 +487,36 @@ def parse_multi_day_with_gemini(client, page_text: str, event_url: str,
     prompt = f"""This is a multi-day Facebook event from "{page_name}".
 
 Full page text:
-{page_text[:5000]}
+{page_text[:6000]}
 
 Your task:
-1. This event spans MULTIPLE days. Create a SEPARATE entry for EACH day.
-2. For each day, extract the specific start_time and end_time if mentioned
-   in the description or schedule.
-3. Include the overall event description.
+1. This event spans MULTIPLE days. You MUST create a SEPARATE entry for EACH day/session.
+2. READ THE DESCRIPTION CAREFULLY — it often contains a detailed schedule with specific
+   dates, times, and activities for each day. Use those to create per-day entries.
+3. If the description lists specific sessions (e.g. "Friday 17:00-20:00 Workshop A",
+   "Saturday 10:00-16:00 Workshop B"), create one event per session with those times.
+4. If no per-day breakdown is in the description, create one entry per day the event runs.
 
 Respond ONLY with valid JSON:
 
 {{
   "events": [
     {{
-      "event_name": "Name of the event",
+      "event_name": "Name of the event (optionally with day-specific suffix like 'Event Name - Day 1')",
       "organizer": "Who is organizing (use '{page_name}' if unclear)",
       "event_date": "YYYY-MM-DD",
       "start_time": "HH:MM (24h format)" or null,
       "end_time": "HH:MM (24h format)" or null,
       "location": "Venue name only (no street address, postal code, or city)" or null,
-      "description": "Summary of what happens on this specific day, or general description"
+      "description": "What happens on THIS specific day/session (from the description)"
     }}
   ]
 }}
 
 Rules:
 - The current date is {datetime.now().strftime('%Y-%m-%d')}.
-- Create one entry per day the event runs.
+- You MUST create MULTIPLE entries — one per day or session. A single entry is WRONG for a multi-day event.
+- Pay special attention to the event DESCRIPTION — it often has the per-day schedule.
 - If per-day times are listed in the description, use those specific times for each day.
 - If the description does NOT mention specific times for each day, set start_time and end_time to null.
   Do NOT invent times or use the overall event date-range start/end as individual day times.
@@ -1063,8 +1084,8 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                 }]
 
             # ── Check for multi-day event: visit event page for per-day details ──
-            if (is_multi_day_event(text)
-                    and client
+            _is_multi = is_multi_day_event(text)
+            if (_is_multi and client
                     and event_url and event_url != page_url):
                 log(f"  🗓️  Multi-day event detected — fetching event page for details...")
                 page_text = fetch_event_page_text(event_url)
@@ -1072,9 +1093,16 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                     multi_events = parse_multi_day_with_gemini(
                         client, page_text, event_url, page_name
                     )
-                    if multi_events:
+                    if multi_events and len(multi_events) > 1:
                         log(f"  🗓️  Parsed {len(multi_events)} day(s) from multi-day event")
                         parsed_events = multi_events
+                    elif multi_events:
+                        log(f"  🗓️  Gemini returned only 1 entry for multi-day event — keeping it")
+                        parsed_events = multi_events
+                    else:
+                        log(f"  🗓️  Multi-day parsing returned no results — keeping fallback")
+                else:
+                    log(f"  🗓️  Could not fetch event page text")
 
             # ── Check for recurring event: visit event page to find all dates ──
             # Only do this if the listing page didn't already give us event_time_id links
