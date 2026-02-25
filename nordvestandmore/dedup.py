@@ -27,11 +27,61 @@ follow these rules:
 ──────────────────────────────────────────────────────────────────────
 """
 import csv
+import io
 import os
 import re
 from pathlib import Path
 
 MAPPING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "source_mapping.csv")
+
+# Google Sheets URL (public, read-only) — edit the sheet at:
+# https://docs.google.com/spreadsheets/d/1aKJo3jTLT8fSDDRFSIkRX9XU_MtrXalnVsJ7_T3UCCk/edit
+_GSHEET_CSV_URL = (
+    "https://docs.google.com/spreadsheets/d/"
+    "1aKJo3jTLT8fSDDRFSIkRX9XU_MtrXalnVsJ7_T3UCCk"
+    "/export?format=csv&gid=0"
+)
+
+# Cache the rows so we only fetch once per run
+_cached_rows: list[dict] | None = None
+
+
+def _load_csv_rows() -> list[dict]:
+    """Load source mapping rows from Google Sheets, falling back to local CSV.
+
+    Returns a list of dicts (one per row) with keys matching the sheet headers:
+    name, instagram, facebook, fb_filter, fb_exclude, website, priority
+    """
+    global _cached_rows
+    if _cached_rows is not None:
+        return _cached_rows
+
+    rows: list[dict] = []
+
+    # Try Google Sheets first
+    try:
+        import urllib.request
+        resp = urllib.request.urlopen(_GSHEET_CSV_URL, timeout=10)
+        text = resp.read().decode("utf-8")
+        reader = csv.DictReader(io.StringIO(text))
+        rows = list(reader)
+        if rows:
+            print(f"📋 Loaded {len(rows)} sources from Google Sheets")
+            _cached_rows = rows
+            return rows
+    except Exception as e:
+        print(f"📋 Google Sheets fetch failed ({e}), falling back to local CSV")
+
+    # Fallback to local CSV
+    path = Path(MAPPING_FILE)
+    if path.exists():
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        print(f"📋 Loaded {len(rows)} sources from local CSV")
+
+    _cached_rows = rows
+    return rows
 
 # Similarity threshold (0-1). Events above this are flagged as duplicates.
 SIMILARITY_THRESHOLD = 0.70
@@ -39,28 +89,22 @@ SIMILARITY_THRESHOLD = 0.70
 
 def load_fb_to_ig_map() -> dict[str, str]:
     """
-    Load source_mapping.csv and return a dict: fb_identifier → ig_handle.
+    Load source mapping and return a dict: fb_identifier → ig_handle.
     Used by the FB scraper to fill in the Instagramhandle column.
     """
     fb_to_ig: dict[str, str] = {}
-    path = Path(MAPPING_FILE)
-    if not path.exists():
-        return fb_to_ig
-
-    with open(path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            ig = (row.get("instagram") or "").strip()
-            fb_raw = (row.get("facebook") or "").strip()
-            if ig and fb_raw:
-                fb_id = _extract_fb_id(fb_raw).lower()
-                fb_to_ig[fb_id] = f"@{ig}"
+    for row in _load_csv_rows():
+        ig = (row.get("instagram") or "").strip()
+        fb_raw = (row.get("facebook") or "").strip()
+        if ig and fb_raw:
+            fb_id = _extract_fb_id(fb_raw).lower()
+            fb_to_ig[fb_id] = f"@{ig}"
     return fb_to_ig
 
 
 def load_source_mapping() -> dict[str, set[str]]:
     """
-    Load source_mapping.csv and build a lookup: source_id → set of all aliases.
+    Load source mapping and build a lookup: source_id → set of all aliases.
 
     Each row has: name, instagram, facebook, ..., website
     We group the entity name, IG handle, and FB page identifier together so we
@@ -73,42 +117,37 @@ def load_source_mapping() -> dict[str, set[str]]:
          "gamma": {"gamma_nv", "61556180883930", "gamma"}, ...}
     """
     groups: dict[str, set[str]] = {}
-    path = Path(MAPPING_FILE)
-    if not path.exists():
-        return {}
 
-    with open(path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            name = (row.get("name") or "").strip().lower()
-            ig = (row.get("instagram") or "").strip().lower()
-            fb_raw = (row.get("facebook") or "").strip()
+    for row in _load_csv_rows():
+        name = (row.get("name") or "").strip().lower()
+        ig = (row.get("instagram") or "").strip().lower()
+        fb_raw = (row.get("facebook") or "").strip()
 
-            # Extract FB identifier from URL
-            fb_id = _extract_fb_id(fb_raw).lower() if fb_raw else ""
+        # Extract FB identifier from URL
+        fb_id = _extract_fb_id(fb_raw).lower() if fb_raw else ""
 
-            # Collect all identifiers for this entity:
-            # entity name (used by website scraper as source key),
-            # IG handle, and FB page id
-            identifiers = {x for x in [name, ig, fb_id] if x}
-            if not identifiers:
-                continue
+        # Collect all identifiers for this entity:
+        # entity name (used by website scraper as source key),
+        # IG handle, and FB page id
+        identifiers = {x for x in [name, ig, fb_id] if x}
+        if not identifiers:
+            continue
 
-            if len(identifiers) < 2:
-                # Only one identifier — nothing to cross-reference
-                for ident in identifiers:
-                    groups.setdefault(ident, set()).add(ident)
-                continue
-
-            # Merge into any existing group
-            merged = set(identifiers)
+        if len(identifiers) < 2:
+            # Only one identifier — nothing to cross-reference
             for ident in identifiers:
-                if ident in groups:
-                    merged |= groups[ident]
+                groups.setdefault(ident, set()).add(ident)
+            continue
 
-            # Point all members to the same group
-            for ident in merged:
-                groups[ident] = merged
+        # Merge into any existing group
+        merged = set(identifiers)
+        for ident in identifiers:
+            if ident in groups:
+                merged |= groups[ident]
+
+        # Point all members to the same group
+        for ident in merged:
+            groups[ident] = merged
 
     return groups
 

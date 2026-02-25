@@ -47,6 +47,9 @@ LOCATION_FIXES: dict[str, str] = {
     # Ansgarkirken
     "Ansgarkirken, Sallingvej 55, 2720 Vanløse": "Ansgarkirken",
     "Ansgarkirken, Sallingvej 55, 2720 København NV": "Ansgarkirken",
+    "Ansgarkirken, Sallingvej 35, 2720 Vanløse": "Ansgarkirken",
+    "Sallingvej 35, 2720 Vanløse": "Ansgarkirken",
+    "Sallingvej 55, 2720 Vanløse": "Ansgarkirken",
     # Grundtvigs Kirke
     "Grundtvigs Kirke, På Bjerget 14B, 2400 København NV": "Grundtvigs Kirke",
     "Grundtvigskirken, På Bjerget 14B, 2400 København NV": "Grundtvigs Kirke",
@@ -56,6 +59,9 @@ LOCATION_FIXES: dict[str, str] = {
     # Rört
     "Rört, Lygten 33, 2400 København NV": "Rört",
     "RÖRT, Lygten 33, 2400 København NV": "Rört",
+    "Rört, Thoravej 35": "Rört",
+    "Thoravej 35": "Rört",
+    "Thoravej 35, 2400 København NV": "Rört",
     # Goldschmidts Musikakademi
     "Goldschmidts Musikakademi, Helga Larsens Plads 2, 2400 København NV": "Goldschmidts Musikakademi",
     # Dave's
@@ -68,6 +74,16 @@ LOCATION_FIXES: dict[str, str] = {
     "Gamma NV, Rentemestervej 67, 2400 København NV": "Gamma NV",
     # Dorthea's Bar
     "Dorthea's Bar, Dortheavej 4, 2400 København NV": "Dorthea's Bar",
+    # MakerSpace NV / Repair Cafe
+    "Smedetoften 12, 2400 Copenhagen": "MakerSpace NV",
+    "Smedetoften 12, 2400 København NV": "MakerSpace NV",
+    "Smedetoften 12": "MakerSpace NV",
+    "Repair Cafe Nordvest": "MakerSpace NV",
+    "Repair Café Nordvest": "MakerSpace NV",
+    # Just Sauna
+    "Just Sauna - Wellness": "Just Sauna",
+    "Just Sauna Wellness": "Just Sauna",
+    "Just Sauna - Wellness, Bispeengen 20, 2000 Frederiksberg": "Just Sauna",
 }
 
 # Also fix locations that have sub-venue + full address (e.g. "Dansekapellet, Thoravej 29, 2400 København NV")
@@ -97,6 +113,9 @@ ADDRESS_SUFFIXES = [
     ", Helga Larsens Plads 2, 2400 København NV",
     ", Landsdommervej 35, 2400 København NV",
     ", Rentemestervej 67, 2400 København NV",
+    ", Smedetoften 12, 2400 København NV",
+    ", Smedetoften 12, 2400 Copenhagen",
+    ", Thoravej 35, 2400 København NV",
     # Generic Copenhagen suffixes (catch-all for any venue we missed)
     ", 2400 København NV",
     ", 2400 Copenhagen NV",

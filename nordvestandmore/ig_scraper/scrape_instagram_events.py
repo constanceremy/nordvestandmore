@@ -391,6 +391,7 @@ Rules:
 - Read ALL images carefully — event details (dates, times, locations) are often only in later slides of the carousel.
 - A caption like "Fredag d. 20. februar kl. 10" IS an event — don't skip it just because the image looks generic.
 - For tagged_accounts: extract ALL @mentions from the caption (not @{account} itself). Include collaborators, performers, DJs, venues, etc. If none found, return an empty list.
+- If the post mentions both "doors" (or "døre åbner") and "show" (or "start") times, use the SHOW/START time as start_time, NOT the doors time.
 - Respond ONLY with the JSON, no extra text."""
 
     try:
@@ -791,6 +792,9 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 "davescph": "Dave's",
                 "goldschmidts_musikakademi": "Goldschmidts Musikakademi",
                 "kapernaumskirken": "Kapernaumskirken",
+                "makerspacenv": "MakerSpace NV",
+                "repaircafenv": "MakerSpace NV",
+                "justsaunacph": "Just Sauna",
             }
             location = _DEFAULT_LOCATIONS.get(account.lower()) or event_data.get("location")
             # Normalize full addresses to venue names
@@ -850,9 +854,9 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
             # Fallback: if URL-based dedup missed, try name+date fuzzy match
             if not page_id:
                 ev_name = ev.get("event_name", "")
-                ev_date = ev.get("start_date", "")
+                ev_date = ev.get("start_date") or ""
                 for entry in all_entries:
-                    if entry.get("start_date", "")[:10] != ev_date[:10]:
+                    if not ev_date or (entry.get("start_date") or "")[:10] != ev_date[:10]:
                         continue
                     name_sim = similarity(ev_name, entry.get("name", ""))
                     if name_sim >= 0.80:

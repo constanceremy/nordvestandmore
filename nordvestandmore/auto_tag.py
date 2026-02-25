@@ -535,16 +535,23 @@ def is_excluded_location(location: str) -> bool:
 # ── Known Nordvest locations → flag unknown ones for review ──
 
 def _load_known_nv_locations() -> set[str]:
-    """Load known NV venue/org names from source_mapping.csv + extras."""
+    """Load known NV venue/org names from source mapping + extras."""
     locations: set[str] = set()
 
-    csv_path = Path(__file__).resolve().parent / "source_mapping.csv"
-    if csv_path.exists():
-        with open(csv_path, encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                name = row.get("name", "").strip()
-                if name:
-                    locations.add(name.lower())
+    try:
+        from dedup import _load_csv_rows
+        for row in _load_csv_rows():
+            name = row.get("name", "").strip()
+            if name:
+                locations.add(name.lower())
+    except ImportError:
+        csv_path = Path(__file__).resolve().parent / "source_mapping.csv"
+        if csv_path.exists():
+            with open(csv_path, encoding="utf-8") as f:
+                for row in csv.DictReader(f):
+                    name = row.get("name", "").strip()
+                    if name:
+                        locations.add(name.lower())
 
     # Additional venue names / aliases not in the CSV
     locations.update({
