@@ -21,7 +21,7 @@ on:
 jobs:
   drip:
     runs-on: self-hosted
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     env:
       # State file persists on the Mac between runs (no need for Actions cache)
