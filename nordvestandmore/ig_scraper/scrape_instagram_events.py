@@ -458,13 +458,23 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
     payload: dict = {"page_size": 100}
     pages_fetched = 0
     while True:
-        r = requests.post(
-            f"{NOTION_API}/databases/{NOTION_DB}/query",
-            headers=NOTION_HEADERS,
-            json=payload,
-            timeout=30,
-        )
-        r.raise_for_status()
+        # Retry on transient network errors (timeouts, connection resets)
+        for attempt in range(3):
+            try:
+                r = requests.post(
+                    f"{NOTION_API}/databases/{NOTION_DB}/query",
+                    headers=NOTION_HEADERS,
+                    json=payload,
+                    timeout=60,
+                )
+                r.raise_for_status()
+                break
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                if attempt < 2:
+                    log(f"  Notion API timeout (attempt {attempt + 1}/3), retrying in 10s...")
+                    time.sleep(10)
+                else:
+                    raise
         data = r.json()
         for page in data.get("results", []):
             props = page.get("properties", {})
