@@ -791,6 +791,9 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 "davescph": "Dave's",
                 "goldschmidts_musikakademi": "Goldschmidts Musikakademi",
                 "kapernaumskirken": "Kapernaumskirken",
+                "makerspacenv": "MakerSpace NV",
+                "repaircafenv": "MakerSpace NV",
+                "justsaunacph": "Just Sauna",
             }
             location = _DEFAULT_LOCATIONS.get(account.lower()) or event_data.get("location")
             # Normalize full addresses to venue names

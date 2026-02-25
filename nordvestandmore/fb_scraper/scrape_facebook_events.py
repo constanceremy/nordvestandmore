@@ -1176,6 +1176,8 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                 "ungdomshusetd61": "Ungdomshuset",
                 "goldschmidtsakademi": "Goldschmidts Musikakademi",
                 "kapernaumskirken": "Kapernaumskirken",
+                "makerspacenv": "MakerSpace NV",
+                "justsaunadk": "Just Sauna",
             }
             location = _FB_DEFAULT_LOCATIONS.get(page_name.lower()) or event_data.get("location")
             # Normalize full addresses to venue names (e.g. "Flere Fugle, Frederikssundsvej 35, 2400..." → "Flere Fugle")
