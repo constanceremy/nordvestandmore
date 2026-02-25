@@ -97,22 +97,45 @@ def save_state(state: dict):
 
 # ── Accounts ──
 
-def load_accounts() -> tuple[list[str], dict[str, str]]:
+def _parse_priority(prio_raw: str, default: int = 3) -> int:
+    """Parse a priority value from the Google Sheet.
+
+    Accepts integers directly (0, 1, 2, 3, 5 …) or legacy named values:
+        0 / skip      → 0  (never scrape)
+        1 / high      → 1  (every cycle — fastest)
+        2 / medium    → 2  (every 2nd cycle)
+        3 / low       → 3  (every 3rd cycle — DEFAULT)
+        5 / very_low  → 5  (every 5th cycle)
+    Any other integer is also valid (e.g. 7 = every 7th cycle).
+    """
+    _named = {"skip": 0, "high": 1, "medium": 2, "low": 3, "very_low": 5}
+    raw = str(prio_raw).strip().lower()
+    if raw in _named:
+        return _named[raw]
+    try:
+        return max(0, int(raw))
+    except (ValueError, TypeError):
+        return default
+
+
+def load_accounts() -> tuple[list[str], dict[str, int]]:
     """Load account handles and priorities from Google Sheets (via dedup),
     falling back to accounts.txt.
 
     Returns: (accounts_list, priority_map)
-        - accounts_list: list of IG handles (no @), with "skip" accounts excluded
-        - priority_map: {handle: "high"|"medium"|"low"|"very_low"}
+        - accounts_list: list of IG handles (no @), priority-0 accounts excluded
+        - priority_map: {handle: int}  where int = "scrape every N cycles"
 
-    Priority tiers:
-        high      — guaranteed 1 slot per batch (fastest coverage)
-        medium    — scraped every cycle (normal, default)
-        low       — scraped every 3rd cycle (~3× less frequent, DEFAULT)
-        very_low  — scraped every 5th cycle (~5× less frequent)
-        skip      — never scraped (excluded from list entirely)
+    Priority semantics (N = priority value):
+        0  — skip (never scraped, excluded entirely)
+        1  — scraped every cycle (fastest)
+        2  — scraped every 2nd cycle
+        3  — scraped every 3rd cycle  ← DEFAULT
+        5  — scraped every 5th cycle
+        N  — scraped every Nth cycle
+    Legacy named values (high/medium/low/very_low) are also accepted.
     """
-    priorities: dict[str, str] = {}
+    priorities: dict[str, int] = {}
 
     # Try Google Sheets via dedup._load_csv_rows
     try:
@@ -123,18 +146,15 @@ def load_accounts() -> tuple[list[str], dict[str, str]]:
         for row in rows:
             ig = (row.get("instagram") or "").strip().lstrip("@")
             if ig:
-                prio = (row.get("priority") or "").strip().lower()
-                if prio == "skip":
+                prio = _parse_priority(row.get("priority") or "")
+                if prio == 0:
                     skipped += 1
                     continue  # excluded entirely
-                if prio in ("high", "medium", "low", "very_low"):
-                    priorities[ig] = prio
-                else:
-                    priorities[ig] = "low"
+                priorities[ig] = prio
                 accounts.append(ig)
         if accounts or skipped:
             if skipped:
-                print(f"   ({skipped} accounts skipped — priority=skip)")
+                print(f"   ({skipped} accounts skipped — priority=0)")
             return accounts, priorities
     except Exception as e:
         print(f"⚠️  Could not load from Google Sheets: {e}")
@@ -147,18 +167,18 @@ def load_accounts() -> tuple[list[str], dict[str, str]]:
             if line and not line.startswith("#"):
                 handle = line.lstrip("@")
                 accounts.append(handle)
-                priorities[handle] = "low"
+                priorities[handle] = 3  # default
     return accounts, priorities
 
 
 def get_batch(state: dict, batch_size: int = BATCH_SIZE_DEFAULT) -> tuple[list[str], int]:
     """Get the next batch of accounts starting from the cursor.
 
-    High-priority accounts get 1 guaranteed slot per batch (rotated).
-    Remaining slots filled with medium/low/very_low accounts from the cursor.
-    Low accounts only scraped every 3rd cycle.
-    Very-low accounts only scraped every 5th cycle.
-    Batch NEVER exceeds batch_size.
+    Each account has a numeric priority N meaning "scrape every Nth cycle".
+    Priority 1 = every cycle, 2 = every other cycle, 3 = every 3rd, etc.
+    Priority 0 = skip (already excluded from all_accounts).
+
+    cycle_num = how many full sweeps through all_accounts have completed.
 
     Returns: (batch, new_cursor)
     """
@@ -166,48 +186,31 @@ def get_batch(state: dict, batch_size: int = BATCH_SIZE_DEFAULT) -> tuple[list[s
     if not all_accounts:
         return [], 0
 
-    high = [a for a in all_accounts if priorities.get(a) == "high"]
-    regular = [a for a in all_accounts if priorities.get(a) != "high"]
-    N = len(regular)
-
-    prio_counts = {"high": len(high), "medium": 0, "low": 0, "very_low": 0}
-    for p in priorities.values():
-        if p in ("medium", "low", "very_low"):
-            prio_counts[p] += 1
-    print(f"   Priorities: {prio_counts['high']} high, {prio_counts['medium']} medium, "
-          f"{prio_counts['low']} low, {prio_counts['very_low']} very_low")
-
-    if N == 0:
-        return high[:batch_size], 0
-
-    # Low accounts scraped every 3rd full cycle; very_low every 5th
+    N = len(all_accounts)
     cycle_num = state.get("cursor", 0) // N if N else 0
-    skip_low = (cycle_num % 3) != 0
-    skip_very_low = (cycle_num % 5) != 0
-
     start = state["cursor"] % N
 
-    # High-priority: rotate through them, 1 per batch
-    batch: list[str] = []
-    if high:
-        high_cursor = state.get("high_cursor", 0) % len(high)
-        batch.append(high[high_cursor])
-        state["high_cursor"] = (high_cursor + 1) % len(high)
+    # Print priority distribution
+    from collections import Counter
+    prio_dist = Counter(priorities.values())
+    dist_str = ", ".join(f"p{k}×{v}" for k, v in sorted(prio_dist.items()))
+    print(f"   Priorities: {dist_str}  (cycle {cycle_num})")
 
-    # Fill remaining slots with regular accounts
+    batch: list[str] = []
     cursor_advance = 0
     checked = 0
+
     while len(batch) < batch_size and checked < N:
         idx = (start + checked) % N
-        account = regular[idx]
+        account = all_accounts[idx]
         checked += 1
         cursor_advance += 1
 
-        prio = priorities.get(account)
-        if skip_low and prio == "low":
+        prio = priorities.get(account, 3)
+        # prio=1: always included; prio=N: only on cycles divisible by N
+        if prio > 1 and cycle_num % prio != 0:
             continue
-        if skip_very_low and prio == "very_low":
-            continue
+
         batch.append(account)
 
     new_cursor = (start + cursor_advance) % N
@@ -631,7 +634,8 @@ def main():
         print(f"\n📅 Last post date per account ({len(sorted_dates)} tracked):\n")
         for handle, d in sorted_dates:
             prio = priorities.get(handle, "?")
-            print(f"  {d}  @{handle}  [{prio}]")
+            prio_str = f"p{prio}" if isinstance(prio, int) else str(prio)
+            print(f"  {d}  @{handle}  [{prio_str}]")
         not_seen = [a for a in all_accounts if a not in last_dates]
         if not_seen:
             print(f"\n  ⏳ Not yet scraped ({len(not_seen)}): {', '.join(f'@{a}' for a in not_seen)}")
@@ -639,13 +643,15 @@ def main():
 
     if args.status:
         cursor = state["cursor"] % len(all_accounts) if all_accounts else 0
+        N = len(all_accounts)
+        cycle_num = state["cursor"] // N if N else 0
         failures = state.get("failures", {})
-        high_count = sum(1 for p in priorities.values() if p == "high")
-        low_count = sum(1 for p in priorities.values() if p == "low")
-        very_low_count = sum(1 for p in priorities.values() if p == "very_low")
-        print(f"📸 Cursor: {cursor}/{len(all_accounts)} "
-              f"({high_count} high, {low_count} low, {very_low_count} very_low)")
-        print(f"   Next: @{all_accounts[cursor]}")
+        from collections import Counter
+        prio_dist = Counter(priorities.values())
+        dist_str = ", ".join(f"p{k}×{v}" for k, v in sorted(prio_dist.items()))
+        print(f"📸 Cursor: {cursor}/{N}  (cycle {cycle_num})")
+        print(f"   Priorities: {dist_str}")
+        print(f"   Next: @{all_accounts[cursor]}" if all_accounts else "")
         print(f"   Scraped this cycle: {state.get('total_scraped', 0)}")
         print(f"   Successes: {state.get('successes', 0)}")
         print(f"   Failures: {len(failures)}")

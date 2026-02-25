@@ -60,6 +60,40 @@ def load_env():
     os.environ.setdefault("DEBUG", "1")
 
 
+def _parse_priority(prio_raw: str, default: int = 1) -> int:
+    """Parse a priority value from the Google Sheet.
+
+    Returns N meaning "scrape every Nth daily run".
+        0 / skip     → 0  (never scrape)
+        1 / high     → 1  (every run — default for main scraper)
+        2 / medium   → 2  (every other run)
+        3 / low      → 3  (every 3rd run)
+        5 / very_low → 5  (every 5th run)
+        N            → N  (any integer)
+    """
+    _named = {"skip": 0, "high": 1, "medium": 2, "low": 3, "very_low": 5}
+    raw = str(prio_raw).strip().lower()
+    if raw in _named:
+        return _named[raw]
+    try:
+        return max(0, int(raw))
+    except (ValueError, TypeError):
+        return default
+
+
+def _should_scrape(priority: int, cycle_num: int) -> bool:
+    """Return True if this source should be scraped this cycle.
+
+    cycle_num is the day-of-year (from date.toordinal()), giving a stable,
+    stateless cycle counter that is the same for all sources in a given day.
+    """
+    if priority == 0:
+        return False
+    if priority == 1:
+        return True
+    return cycle_num % priority == 0
+
+
 def load_mapping() -> list[dict]:
     """Load source mapping from Google Sheets, falling back to local CSV."""
     from dedup import _load_csv_rows
@@ -72,6 +106,7 @@ def load_mapping() -> list[dict]:
             "fb_filter": (row.get("fb_filter") or "").strip(),
             "fb_exclude": (row.get("fb_exclude") or "").strip(),
             "website": (row.get("website") or "").strip(),
+            "priority": _parse_priority(row.get("priority") or "1"),
         })
     return rows
 
@@ -233,17 +268,19 @@ def main():
 
     # ── --list mode ──
     if len(sys.argv) > 1 and sys.argv[1] == "--list":
-        print(f"{'#':<5} {'Name':<40} {'IG':<30} {'FB':<5} {'Web'}")
-        print("─" * 115)
+        print(f"{'#':<5} {'Name':<40} {'P':<4} {'IG':<30} {'FB':<5} {'Web'}")
+        print("─" * 120)
         for idx, r in enumerate(sorted(all_rows, key=lambda r: r["name"].lower()), 1):
             ig = r["instagram"] or "—"
             fb = "✓" if r["facebook"] else "—"
             web = "✓" if r["website"] else "—"
+            prio = r.get("priority", 1)
             filt = f" (filter: {r['fb_filter']})" if r["fb_filter"] else ""
             if r.get("fb_exclude"):
                 filt += f" (exclude: {r['fb_exclude']})"
-            print(f"{idx:<5} {r['name']:<40} {ig:<30} {fb:<5} {web}{filt}")
+            print(f"{idx:<5} {r['name']:<40} {prio:<4} {ig:<30} {fb:<5} {web}{filt}")
         print(f"\n{len(all_rows)} sources total")
+        print("Priority: 0=skip, 1=every day, 2=every 2nd day, 3=every 3rd day, etc.")
         return
 
     # ── Resolve selection ──
@@ -274,6 +311,14 @@ def main():
             return
 
     selected = resolve_selections(all_rows, args)
+
+    # Drop rows that have no FB and no website — IG is always handled by the drip scraper
+    ig_only = [r for r in selected if not r["facebook"] and not r["website"]]
+    selected = [r for r in selected if r["facebook"] or r["website"]]
+    if ig_only:
+        log(f"⏭️  Skipping {len(ig_only)} IG-only source(s) (no FB/website): "
+            f"{', '.join(r['name'] for r in ig_only[:5])}"
+            f"{'…' if len(ig_only) > 5 else ''}")
 
     # Apply --from: skip entities before the specified one
     if start_from and selected:
@@ -394,6 +439,21 @@ def main():
     errors_log: list[str] = []
 
     totals = {"created": 0, "updated": 0, "skipped": 0, "flagged_dupes": 0, "total_events": 0}
+
+    # ── Priority filtering (only in "all" mode — explicit selections always run) ──
+    scrape_all = not sys.argv[1:] or sys.argv[1].lower() == "all"
+    if scrape_all:
+        from datetime import date
+        cycle_num = date.today().toordinal()
+        skipped_by_priority = [r for r in selected if not _should_scrape(r.get("priority", 1), cycle_num)]
+        selected = [r for r in selected if _should_scrape(r.get("priority", 1), cycle_num)]
+        if skipped_by_priority:
+            log(f"⏭️  Skipping {len(skipped_by_priority)} source(s) due to priority "
+                f"(cycle {cycle_num % 7}/7 approx):")
+            for r in skipped_by_priority:
+                log(f"     {r['name']}  (priority {r.get('priority', 1)})")
+    else:
+        cycle_num = None  # not used
 
     ig_count = sum(1 for r in selected if r["instagram"])
     fb_count = len({r["facebook"] for r in selected if r["facebook"]})
