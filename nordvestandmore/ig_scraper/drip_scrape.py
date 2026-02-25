@@ -28,6 +28,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(SCRIPT_DIR)
 ACCOUNTS_FILE = os.path.join(SCRIPT_DIR, "accounts.txt")
 
+# Add parent dir so we can import dedup
+sys.path.insert(0, PARENT_DIR)
+
 # State file — persisted across runs via GitHub Actions cache
 # Also accepts legacy IG_CURSOR_FILE for backwards compatibility
 STATE_FILE = os.environ.get("IG_STATE_FILE",
@@ -71,35 +74,90 @@ def save_state(state: dict):
 
 # ── Accounts ──
 
-def load_accounts() -> list[str]:
-    """Load account handles from accounts.txt."""
+def load_accounts() -> tuple[list[str], dict[str, str]]:
+    """Load account handles and priorities from Google Sheets (via dedup),
+    falling back to accounts.txt.
+
+    Returns: (accounts_list, priority_map)
+        - accounts_list: list of IG handles (no @)
+        - priority_map: {handle: "high"|"medium"|"low"}
+    """
+    priorities: dict[str, str] = {}
+
+    # Try Google Sheets via dedup._load_csv_rows
+    try:
+        from dedup import _load_csv_rows
+        rows = _load_csv_rows()
+        accounts = []
+        for row in rows:
+            ig = (row.get("instagram") or "").strip().lstrip("@")
+            if ig:
+                accounts.append(ig)
+                prio = (row.get("priority") or "").strip().lower()
+                if prio in ("high", "medium", "low"):
+                    priorities[ig] = prio
+                else:
+                    priorities[ig] = "medium"
+        if accounts:
+            return accounts, priorities
+    except Exception as e:
+        print(f"⚠️  Could not load from Google Sheets: {e}")
+
+    # Fallback to accounts.txt
     accounts = []
     with open(ACCOUNTS_FILE) as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#"):
-                accounts.append(line.lstrip("@"))
-    return accounts
+                handle = line.lstrip("@")
+                accounts.append(handle)
+                priorities[handle] = "medium"
+    return accounts, priorities
 
 
 def get_batch(state: dict, batch_size: int = BATCH_SIZE_DEFAULT) -> tuple[list[str], int]:
     """Get the next batch of accounts starting from the cursor.
 
+    High-priority accounts are always included in every batch.
+    Remaining slots are filled with medium/low accounts from the cursor.
+    Low accounts are only scraped every 3rd cycle.
+
     Returns: (batch, new_cursor)
     """
-    accounts = load_accounts()
-    if not accounts:
+    all_accounts, priorities = load_accounts()
+    if not all_accounts:
         return [], 0
 
-    N = len(accounts)
+    # Separate high-priority accounts (always scraped)
+    high = [a for a in all_accounts if priorities.get(a) == "high"]
+
+    # Regular accounts (medium + low) for cursor-based rotation
+    regular = [a for a in all_accounts if priorities.get(a) != "high"]
+    N = len(regular)
+    if N == 0:
+        return high[:batch_size], 0
+
+    # Low-priority accounts only scraped every 3rd full cycle
+    cycle_num = state.get("cursor", 0) // N if N else 0
+    skip_low = (cycle_num % 3) != 0
+
     start = state["cursor"] % N
+    remaining_slots = max(0, batch_size - len(high))
 
-    batch = []
-    for i in range(min(batch_size, N)):
-        idx = (start + i) % N
-        batch.append(accounts[idx])
+    batch = list(high)  # Always include high-priority
+    cursor_advance = 0
+    checked = 0
+    while len(batch) < batch_size and checked < N:
+        idx = (start + checked) % N
+        account = regular[idx]
+        checked += 1
+        cursor_advance += 1
 
-    new_cursor = (start + len(batch)) % N
+        if skip_low and priorities.get(account) == "low":
+            continue
+        batch.append(account)
+
+    new_cursor = (start + cursor_advance) % N
     return batch, new_cursor
 
 
@@ -118,7 +176,7 @@ def write_summary(lines: list[str]):
 
 def format_run_summary(batch: list[str], results: dict[str, dict], state: dict) -> list[str]:
     """Format a per-run markdown summary."""
-    accounts = load_accounts()
+    all_accounts, _ = load_accounts()
     lines = []
     lines.append("## 📸 Instagram Drip Scraper")
     lines.append("")
@@ -127,7 +185,7 @@ def format_run_summary(batch: list[str], results: dict[str, dict], state: dict) 
     failed = [a for a, r in results.items() if not r["ok"]]
 
     lines.append(f"**Batch:** accounts {state['cursor'] - len(batch) + 1}–"
-                 f"{state['cursor']} of {len(accounts)}")
+                 f"{state['cursor']} of {len(all_accounts)}")
     lines.append("")
 
     if succeeded:
@@ -157,7 +215,7 @@ def format_run_summary(batch: list[str], results: dict[str, dict], state: dict) 
 def daily_report():
     """Generate a daily digest of failures and reset the counter."""
     state = load_state()
-    accounts = load_accounts()
+    all_accounts, _ = load_accounts()
     failures = state.get("failures", {})
     successes = state.get("successes", 0)
     total = state.get("total_scraped", 0)
@@ -260,9 +318,9 @@ def run_scrape(batch_size: int):
         print("No accounts to scrape.")
         return
 
-    accounts = load_accounts()
-    start_pos = state["cursor"] % len(accounts) if accounts else 0
-    print(f"📸 Drip batch: accounts {start_pos + 1}–{start_pos + len(batch)} of {len(accounts)}")
+    all_accounts, _ = load_accounts()
+    start_pos = state["cursor"] % len(all_accounts) if all_accounts else 0
+    print(f"📸 Drip batch: accounts {start_pos + 1}–{start_pos + len(batch)} of {len(all_accounts)}")
     print(f"   Accounts: {', '.join(f'@{a}' for a in batch)}")
 
     # ── Import and set up the IG scraper ──
@@ -426,14 +484,16 @@ def main():
         daily_report()
         return
 
-    accounts = load_accounts()
+    all_accounts, priorities = load_accounts()
     state = load_state()
 
     if args.status:
-        cursor = state["cursor"] % len(accounts) if accounts else 0
+        cursor = state["cursor"] % len(all_accounts) if all_accounts else 0
         failures = state.get("failures", {})
-        print(f"📸 Cursor: {cursor}/{len(accounts)}")
-        print(f"   Next: @{accounts[cursor]}")
+        high_count = sum(1 for p in priorities.values() if p == "high")
+        low_count = sum(1 for p in priorities.values() if p == "low")
+        print(f"📸 Cursor: {cursor}/{len(all_accounts)} ({high_count} high, {low_count} low)")
+        print(f"   Next: @{all_accounts[cursor]}")
         print(f"   Scraped this cycle: {state.get('total_scraped', 0)}")
         print(f"   Successes: {state.get('successes', 0)}")
         print(f"   Failures: {len(failures)}")

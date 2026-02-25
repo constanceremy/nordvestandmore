@@ -61,18 +61,18 @@ def load_env():
 
 
 def load_mapping() -> list[dict]:
+    """Load source mapping from Google Sheets, falling back to local CSV."""
+    from dedup import _load_csv_rows
     rows = []
-    with open(MAPPING_FILE, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            rows.append({
-                "name": (row.get("name") or "").strip(),
-                "instagram": (row.get("instagram") or "").strip(),
-                "facebook": (row.get("facebook") or "").strip(),
-                "fb_filter": (row.get("fb_filter") or "").strip(),
-                "fb_exclude": (row.get("fb_exclude") or "").strip(),
-                "website": (row.get("website") or "").strip(),
-            })
+    for row in _load_csv_rows():
+        rows.append({
+            "name": (row.get("name") or "").strip(),
+            "instagram": (row.get("instagram") or "").strip(),
+            "facebook": (row.get("facebook") or "").strip(),
+            "fb_filter": (row.get("fb_filter") or "").strip(),
+            "fb_exclude": (row.get("fb_exclude") or "").strip(),
+            "website": (row.get("website") or "").strip(),
+        })
     return rows
 
 
@@ -227,10 +227,9 @@ def _post_scrape_dedup() -> int:
 # ────────────────── Main ──────────────────
 
 def main():
-    if not MAPPING_FILE.exists():
-        sys.exit(f"Missing {MAPPING_FILE}")
-
     all_rows = load_mapping()
+    if not all_rows:
+        sys.exit("No sources loaded (check Google Sheets or local CSV)")
 
     # ── --list mode ──
     if len(sys.argv) > 1 and sys.argv[1] == "--list":
