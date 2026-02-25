@@ -10,6 +10,10 @@ on:
         description: "Dry run (preview only, no changes)"
         type: boolean
         default: false
+      today_only:
+        description: "⚡ Quick sync: only replace today's events"
+        type: boolean
+        default: false
 
 jobs:
   sync:
@@ -39,11 +43,14 @@ jobs:
           WIX_COLLECTION_ID: Import1
         working-directory: nordvestandmore
         run: |
+          FLAGS=""
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            python3 sync_to_wix.py --dry-run
-          else
-            python3 sync_to_wix.py
+            FLAGS="$FLAGS --dry-run"
           fi
+          if [ "${{ inputs.today_only }}" = "true" ]; then
+            FLAGS="$FLAGS --today"
+          fi
+          python3 sync_to_wix.py $FLAGS
 
       - name: Send failure notification
         if: failure() || cancelled()

@@ -407,15 +407,104 @@ def sync(dry_run: bool = False):
     log(f"✅ Sync complete: {inserted} events pushed to Wix")
 
 
+def sync_today(dry_run: bool = False):
+    """
+    Quick sync: only replace today's events in Wix.
+    1. Reads today's events from Notion
+    2. Deletes only today's events from Wix
+    3. Re-inserts today's events from Notion
+    Much faster than a full sync — useful for quick corrections.
+    """
+    if not NOTION_TOKEN or not NOTION_DB:
+        sys.exit("Missing NOTION_TOKEN or NOTION_DATABASE_ID")
+    if not WIX_API_KEY or not WIX_SITE_ID:
+        sys.exit("Missing WIX_API_KEY or WIX_SITE_ID")
+
+    today_str = date.today().isoformat()
+    log(f"⚡ Quick sync: today's events only ({today_str})")
+
+    # 1. Read today's events from Notion
+    all_events = read_notion_events()
+    today_events = [
+        ev for ev in all_events
+        if ev.get("start_date", "")[:10] == today_str
+    ]
+    log(f"Found {len(today_events)} event(s) for today in Notion")
+
+    # 2. Find and remove today's events from Wix
+    wix_items = wix_get_all_items()
+    today_wix_ids = []
+    for item in wix_items:
+        item_data = item.get("data", {})
+        # Check the dateForWix field (ISO format) or startDate (readable)
+        wix_date = item_data.get("dateForWix", {})
+        if isinstance(wix_date, dict):
+            # {"$date": "2026-02-25T00:00:00Z"}
+            raw = wix_date.get("$date", "")
+            if raw[:10] == today_str:
+                item_id = item.get("id") or item.get("_id")
+                if item_id:
+                    today_wix_ids.append(item_id)
+                continue
+        # Fallback: check startDate field (readable like "February 25, 2026")
+        start_date_str = item_data.get("startDate", "")
+        if start_date_str:
+            try:
+                parsed = datetime.strptime(start_date_str, "%B %d, %Y").date()
+                if parsed.isoformat() == today_str:
+                    item_id = item.get("id") or item.get("_id")
+                    if item_id:
+                        today_wix_ids.append(item_id)
+            except (ValueError, TypeError):
+                pass
+
+    if dry_run:
+        log(f"[DRY-RUN] Would remove {len(today_wix_ids)} today's item(s) from Wix")
+        log(f"[DRY-RUN] Would insert {len(today_events)} today's event(s)")
+        for ev in today_events:
+            log(f"  [DRY-RUN] {ev['event_name']} ({ev['start_time'] or '?'})")
+        return
+
+    if today_wix_ids:
+        log(f"Removing {len(today_wix_ids)} existing today's item(s) from Wix...")
+        removed = wix_bulk_remove(today_wix_ids)
+        log(f"  Removed {removed} item(s)")
+        time.sleep(0.5)
+    else:
+        log("No existing today's items in Wix to remove")
+
+    # 3. Insert today's events
+    if not today_events:
+        log("No events for today to insert")
+        return
+
+    # Figure out the sort position — today's events should come first
+    # Use "00001", "00002", etc. since they're the earliest date
+    log(f"Inserting {len(today_events)} today's event(s) into Wix...")
+    inserted = 0
+    for i, ev in enumerate(today_events, start=1):
+        wix_data = _notion_to_wix(ev)
+        wix_data["sortByDate"] = str(i).zfill(5)
+        if wix_insert_item(wix_data):
+            inserted += 1
+        time.sleep(0.15)
+
+    log(f"⚡ Quick sync done: {inserted} today's event(s) pushed to Wix")
+
+
 # ────────────────── CLI ──────────────────
 
 def main():
     dry_run = "--dry-run" in sys.argv
+    today_only = "--today" in sys.argv
 
     if dry_run:
         log("Dry-run mode — no changes will be made to Wix")
 
-    sync(dry_run=dry_run)
+    if today_only:
+        sync_today(dry_run=dry_run)
+    else:
+        sync(dry_run=dry_run)
 
 
 if __name__ == "__main__":
