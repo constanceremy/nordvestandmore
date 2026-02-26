@@ -201,9 +201,13 @@ def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
     consecutive_old = 0
     MAX_CONSECUTIVE_OLD = 3
     for post in profile.get_posts():
-        # Skip pinned posts — they appear first but are usually old
         if getattr(post, 'is_pinned', False):
+            # Always include pinned posts — they're intentionally featured and
+            # may contain upcoming events. Don't let them affect latest_post_date
+            # or the consecutive_old counter so normal cutoff logic is unaffected.
+            posts.append(post)
             pinned_count += 1
+            time.sleep(random.uniform(0.8, 1.5))
             continue
         if latest_post_date is None:
             latest_post_date = post.date_utc
@@ -216,7 +220,7 @@ def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
         posts.append(post)
         time.sleep(random.uniform(0.8, 1.5))
     if pinned_count:
-        log(f"  Skipped {pinned_count} pinned post{'s' if pinned_count != 1 else ''}")
+        log(f"  Included {pinned_count} pinned post{'s' if pinned_count != 1 else ''}")
 
     # If 0 posts and not logged in, Instagram may be hiding them
     if not posts and not _logged_in and auto_login_retry:
