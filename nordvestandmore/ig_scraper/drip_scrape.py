@@ -75,6 +75,8 @@ def _default_state() -> dict:
         "total_scraped": 0,
         "last_reset": datetime.now(timezone.utc).isoformat(),
         "last_post_dates": {},  # {"handle": "YYYY-MM-DD"} — last post seen per account
+        "auth_failure_streak": 0,  # consecutive all-failed runs (likely expired session)
+        "suspended": False,        # if True, skip runs until session is refreshed
     }
 
 
@@ -395,6 +397,15 @@ def run_scrape(batch_size: int):
     time_in_retries = 0.0  # Track time spent in retry waits
 
     state = load_state()
+
+    # ── Suspension check (expired session) ──
+    if state.get("suspended"):
+        print("⏸️  Scraper is suspended due to repeated auth failures (401).")
+        print("   The Instagram session cookie has likely expired.")
+        print("   Fix: refresh the session and update IG_SESSION_B64 secret.")
+        print("   The scraper will resume automatically once a run succeeds.")
+        return  # exit cleanly — no failure, no notification spam
+
     batch, new_cursor = get_batch(state, batch_size)
 
     if not batch:
@@ -575,6 +586,33 @@ def run_scrape(batch_size: int):
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
+    # ── Auth failure streak tracking ──
+    ok = sum(1 for r in results.values() if r["ok"])
+    fail = sum(1 for r in results.values() if not r["ok"])
+
+    if ok > 0:
+        # At least one success — session is alive, reset streak
+        state["auth_failure_streak"] = 0
+        state["suspended"] = False
+    elif fail == len(batch) and fail > 0:
+        # Every account in this batch failed — likely a dead session
+        state["auth_failure_streak"] = state.get("auth_failure_streak", 0) + 1
+        streak = state["auth_failure_streak"]
+        print(f"⚠️  All {fail} accounts failed — auth failure streak: {streak}/2")
+        if streak >= 2:
+            state["suspended"] = True
+            print("🚫 Suspending scraper after 2 consecutive all-failed runs.")
+            print("   Refresh the IG session cookie and update IG_SESSION_B64.")
+            _ntfy(
+                "IG Scraper suspended — session expired",
+                "All accounts failing with 401. Refresh IG_SESSION_B64 secret to resume.",
+                priority="high",
+                tags="warning",
+            )
+    else:
+        # Mixed results — don't count as a full auth failure
+        state["auth_failure_streak"] = 0
+
     # Update cursor
     state["cursor"] = new_cursor
     save_state(state)
@@ -589,8 +627,6 @@ def run_scrape(batch_size: int):
     # Print final stats + timing breakdown
     total_elapsed = time.time() - run_start
     time_scraping = total_elapsed - notion_load_time - time_in_delays - time_in_retries
-    ok = sum(1 for r in results.values() if r["ok"])
-    fail = sum(1 for r in results.values() if not r["ok"])
     print(f"\n📸 Batch done: {ok} succeeded, {fail} failed")
     print(f"   Accumulated failures today: {len(state.get('failures', {}))}")
     print(f"\n⏱️  Time breakdown (total {_fmt_duration(total_elapsed)}):")
