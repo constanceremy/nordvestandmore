@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -96,6 +97,17 @@ def save_state(state: dict):
 
 
 # ── Accounts ──
+
+def _account_stagger(account: str) -> int:
+    """Return a stable, evenly-distributed stagger offset for an account.
+
+    Uses a hash of the account name so:
+    - Adding new accounts never reshuffles existing ones
+    - Accounts are spread evenly regardless of their order in the sheet
+    - Same account always gets the same offset across runs
+    """
+    return int(hashlib.md5(account.encode()).hexdigest(), 16)
+
 
 def _parse_priority(prio_raw: str, default: int = 3) -> int:
     """Parse a priority value from the Google Sheet.
@@ -207,8 +219,12 @@ def get_batch(state: dict, batch_size: int = BATCH_SIZE_DEFAULT) -> tuple[list[s
         cursor_advance += 1
 
         prio = priorities.get(account, 3)
-        # prio=1: always included; prio=N: only on cycles divisible by N
-        if prio > 1 and cycle_num % prio != 0:
+        # Stagger accounts of the same priority across cycles using a stable
+        # hash of the account name as the offset. This means:
+        #   - Every cycle has ~equal load (no giant cycle-0 spike)
+        #   - Adding a new account never reshuffles existing ones
+        #   - p2 accounts: half active each cycle, p3: one-third each cycle, etc.
+        if prio > 1 and (cycle_num + _account_stagger(account)) % prio != 0:
             continue
 
         batch.append(account)
