@@ -49,12 +49,12 @@ jobs:
           REAL_HOME=$(eval echo ~)
           SESSION_DIR="$REAL_HOME/.config/instaloader"
           SESSION_FILE="$SESSION_DIR/session-${IG_USERNAME}"
-          if [ -f "$SESSION_FILE" ]; then
-            echo "📸 Session file already exists at $SESSION_FILE"
-          elif [ -n "$IG_SESSION_B64" ]; then
-            echo "📸 Restoring session from secret"
+          if [ -n "$IG_SESSION_B64" ]; then
+            echo "📸 Restoring session from secret (always overwrite to pick up refreshed cookies)"
             mkdir -p "$SESSION_DIR"
             echo "$IG_SESSION_B64" | base64 -d > "$SESSION_FILE"
+          elif [ -f "$SESSION_FILE" ]; then
+            echo "📸 No secret found — using existing session file at $SESSION_FILE"
           else
             echo "📸 No session file or secret found — will scrape without login"
           fi
