@@ -18,6 +18,12 @@ on:
         type: string
         default: ""
 
+concurrency:
+  # Only one drip run at a time. If a new run is queued while one is in progress,
+  # cancel the in-progress one so we don't pile up stale batches after a Mac sleep.
+  group: ig-drip
+  cancel-in-progress: true
+
 jobs:
   drip:
     runs-on: self-hosted
