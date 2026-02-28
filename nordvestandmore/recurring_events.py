@@ -88,19 +88,6 @@ RECURRING_EVENTS = [
         # Thursday (3), even ISO weeks
     },
     {
-        "id": "flerefugle_fryday",
-        "event_name": "Fry-Day",
-        "organizer": "Flere Fugle",
-        "ig_handle": "@flerefugle",
-        "location": "Flere Fugle",
-        "url": "https://www.instagram.com/p/DJHBK3Zi14I/",
-        "start_time": "16:30",
-        "end_time": None,
-        "source": "flerefugle",
-        "schedule": {"type": "weekly", "weekday": 4},
-        # Friday (4)
-    },
-    {
         "id": "poolpub_happyhour",
         "event_name": "Happy Hour - 2 for 1 cocktail",
         "organizer": "Pool Pub",
