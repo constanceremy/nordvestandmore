@@ -107,10 +107,21 @@ def read_notion_events() -> list[dict]:
 
     pages_fetched = 0
     while True:
-        r = requests.post(
-            f"{NOTION_API}/databases/{NOTION_DB}/query",
-            headers=NOTION_HEADERS, json=payload, timeout=30,
-        )
+        # Retry up to 3 times — Notion API occasionally times out transiently
+        for attempt in range(3):
+            try:
+                r = requests.post(
+                    f"{NOTION_API}/databases/{NOTION_DB}/query",
+                    headers=NOTION_HEADERS, json=payload, timeout=60,
+                )
+                break
+            except requests.exceptions.Timeout:
+                if attempt < 2:
+                    wait = 10 * (attempt + 1)
+                    log(f"Notion read timed out (attempt {attempt+1}/3), retrying in {wait}s…")
+                    time.sleep(wait)
+                else:
+                    raise
         if r.status_code != 200:
             log(f"Notion query error: {r.status_code} {r.text[:200]}")
             break
