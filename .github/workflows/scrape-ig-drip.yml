@@ -17,6 +17,10 @@ on:
         description: "Specific accounts to scrape (space-separated, overrides cursor)"
         type: string
         default: ""
+      days_back:
+        description: "How many days back to look for posts (default: 20 for manual runs, 7 for scheduled)"
+        type: number
+        default: 20
 
 concurrency:
   # Only one drip run at a time. If a new run is queued while one is in progress,
@@ -84,7 +88,8 @@ jobs:
 
           if [ -n "${{ inputs.accounts }}" ]; then
             echo "📸 Manual mode: scraping specific accounts"
-            python3 scrape_instagram_events.py ${{ inputs.accounts }}
+            # Use provided days_back (default 20) for manual runs so older posts aren't missed
+            DAYS_BACK="${{ inputs.days_back || '20' }}" python3 scrape_instagram_events.py ${{ inputs.accounts }}
           else
             BATCH_SIZE="${{ inputs.batch_size || '5' }}"
             python3 drip_scrape.py --batch-size "$BATCH_SIZE"
