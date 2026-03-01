@@ -682,14 +682,17 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
 
         # Download ALL images for vision analysis (carousel slides)
         image_paths = download_all_images(post, tmp_dir)
-        if DEBUG and len(image_paths) > 1:
+        if not image_paths:
+            log(f"  ⚠️  No images downloaded for {post_url} — sending caption only")
+        elif len(image_paths) > 1:
             log(f"  Downloaded {len(image_paths)} carousel slides for {post_url}")
 
         # Analyze with Gemini — returns a LIST of events
         events = analyze_post_with_gemini(client, caption, image_paths, account)
 
         if not events:
-            log(f"  Not an event: {post_url}")
+            img_note = f" (⚠️ image missing — may be a flyer post!)" if not image_paths else ""
+            log(f"  Not an event: {post_url}{img_note}")
             skipped += 1
             continue
 
