@@ -201,23 +201,6 @@ RECURRING_EVENTS = [
         },
     },
     {
-        "id": "makerspace_repaircafe",
-        "event_name": "Repair Cafe",
-        "organizer": "MakerSpace NV",
-        "ig_handle": "@makerspacenv",
-        "location": "MakerSpace NV",
-        "url": "https://www.facebook.com/repaircafe.nordvest",
-        "start_time": "17:00",
-        "end_time": "19:30",
-        "source": "makerspacenv",
-        "schedule": {
-            "type": "monthly_weekday",
-            "weekday": 1,  # Tuesday
-            "nth": 1,      # First Tuesday of the month
-            "months": list(range(1, 13)),  # All year
-        },
-    },
-    {
         "id": "kbhtrup_flea",
         "event_name": "Københavnstrup Flea Market",
         "organizer": "Københavns Trup",
