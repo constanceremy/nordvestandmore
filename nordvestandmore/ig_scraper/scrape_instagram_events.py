@@ -475,7 +475,14 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
                 break
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
                 if attempt < 2:
-                    log(f"  Notion API timeout (attempt {attempt + 1}/3), retrying in 10s...")
+                    log(f"  Notion API error (attempt {attempt + 1}/3), retrying in 10s… ({e})")
+                    time.sleep(10)
+                else:
+                    raise
+            except requests.exceptions.HTTPError as e:
+                # Retry on 5xx server errors (502, 503, 504); raise immediately on 4xx
+                if e.response is not None and e.response.status_code >= 500 and attempt < 2:
+                    log(f"  Notion API {e.response.status_code} (attempt {attempt + 1}/3), retrying in 10s…")
                     time.sleep(10)
                 else:
                     raise
