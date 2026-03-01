@@ -4,7 +4,12 @@ on:
   schedule:
     # Runs daily at 19:30 UTC = ~9:30 PM Copenhagen (summer) / ~8:30 PM (winter)
     - cron: "30 19 * * *"
-  workflow_dispatch:  # Allow manual runs from GitHub UI
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "Specific source(s) to scrape — space-separated names from the sheet (partial match ok). Leave empty to scrape all."
+        type: string
+        default: ""
 
 jobs:
   scrape:
@@ -44,7 +49,13 @@ jobs:
           SKIP_IG: "1"  # IG handled by drip-feed workflow (scrape-ig-drip.yml)
           DEBUG: "1"
         working-directory: nordvestandmore
-        run: python3 run_scraper.py all --auto
+        run: |
+          if [ -n "${{ inputs.sources }}" ]; then
+            echo "🎯 Manual mode: scraping specific source(s): ${{ inputs.sources }}"
+            python3 run_scraper.py ${{ inputs.sources }}
+          else
+            python3 run_scraper.py all --auto
+          fi
 
       - name: Post run summary
         if: always()
