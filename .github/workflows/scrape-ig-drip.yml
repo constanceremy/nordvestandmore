@@ -21,6 +21,10 @@ on:
         description: "How many days back to look for posts (default: 20 for manual runs, 7 for scheduled)"
         type: number
         default: 20
+      force_refresh_session:
+        description: "Force restore session from IG_SESSION_B64 secret (use after updating the secret)"
+        type: boolean
+        default: false
 
 concurrency:
   # Only one drip run at a time. If a new run is queued while one is in progress,
@@ -59,12 +63,17 @@ jobs:
           REAL_HOME=$(eval echo ~)
           SESSION_DIR="$REAL_HOME/.config/instaloader"
           SESSION_FILE="$SESSION_DIR/session-${IG_USERNAME}"
-          if [ -n "$IG_SESSION_B64" ]; then
-            echo "📸 Restoring session from secret (always overwrite to pick up refreshed cookies)"
+          FORCE="${{ inputs.force_refresh_session }}"
+          if [ "$FORCE" = "true" ] && [ -n "$IG_SESSION_B64" ]; then
+            echo "📸 Force-refreshing session from secret (overwriting local file)"
             mkdir -p "$SESSION_DIR"
             echo "$IG_SESSION_B64" | base64 -d > "$SESSION_FILE"
           elif [ -f "$SESSION_FILE" ]; then
-            echo "📸 No secret found — using existing session file at $SESSION_FILE"
+            echo "📸 Using existing session file at $SESSION_FILE (preserving token rotations)"
+          elif [ -n "$IG_SESSION_B64" ]; then
+            echo "📸 No local session file — restoring from secret"
+            mkdir -p "$SESSION_DIR"
+            echo "$IG_SESSION_B64" | base64 -d > "$SESSION_FILE"
           else
             echo "📸 No session file or secret found — will scrape without login"
           fi
