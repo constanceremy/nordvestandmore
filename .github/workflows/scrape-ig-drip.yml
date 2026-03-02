@@ -99,9 +99,13 @@ jobs:
             echo "📸 Manual mode: scraping specific accounts"
             # Use provided days_back (default 20) for manual runs so older posts aren't missed
             DAYS_BACK="${{ inputs.days_back || '20' }}" python3 scrape_instagram_events.py ${{ inputs.accounts }}
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual drip run — bypass random skip/delay
+            BATCH_SIZE="${{ inputs.batch_size || '3' }}"
+            python3 drip_scrape.py --batch-size "$BATCH_SIZE" --force
           else
-            BATCH_SIZE="${{ inputs.batch_size || '5' }}"
-            python3 drip_scrape.py --batch-size "$BATCH_SIZE"
+            # Scheduled run — use random skip + delay for organic timing
+            python3 drip_scrape.py --batch-size 3
           fi
 
       # ── Failure notification ──

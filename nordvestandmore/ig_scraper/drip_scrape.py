@@ -20,6 +20,7 @@ import argparse
 import hashlib
 import json
 import os
+import random
 import sys
 import time
 from datetime import datetime, timezone
@@ -74,7 +75,8 @@ def _default_state() -> dict:
         "successes": 0,
         "total_scraped": 0,
         "last_reset": datetime.now(timezone.utc).isoformat(),
-        "last_post_dates": {},  # {"handle": "YYYY-MM-DD"} — last post seen per account
+        "last_post_dates": {},   # {"handle": "YYYY-MM-DD"} — last post seen per account
+        "last_scraped": {},      # {"handle": ISO timestamp} — when we last attempted scrape
         "auth_failure_streak": 0,  # consecutive all-failed runs (likely expired session)
         "suspended": False,        # if True, skip runs until session is refreshed
     }
@@ -185,53 +187,108 @@ def load_accounts() -> tuple[list[str], dict[str, int]]:
     return accounts, priorities
 
 
-def get_batch(state: dict, batch_size: int = BATCH_SIZE_DEFAULT) -> tuple[list[str], int]:
-    """Get the next batch of accounts starting from the cursor.
+def get_batch(state: dict, max_cursor_size: int = BATCH_SIZE_DEFAULT) -> tuple[list[str], int]:
+    """Two-tier batch selection for organic, human-like scraping patterns.
 
-    Each account has a numeric priority N meaning "scrape every Nth cycle".
-    Priority 1 = every cycle, 2 = every other cycle, 3 = every 3rd, etc.
-    Priority 0 = skip (already excluded from all_accounts).
+    Tier 1 — P1 overrides (time-based, bypasses cursor):
+        Any p1 account not scraped in >30h is pulled in immediately,
+        up to 3 per run. This guarantees p1 coverage within ~36h
+        regardless of skip rate or batch size.
 
-    cycle_num = how many full sweeps through all_accounts have completed.
+    Tier 2 — Cursor fill (position-based, randomised count):
+        A random number (1..max_cursor_size) of eligible accounts are
+        taken from the cursor position and added to the batch, skipping
+        any already selected as p1 overrides.
 
     Returns: (batch, new_cursor)
     """
     all_accounts, priorities = load_accounts()
     if not all_accounts:
-        return [], 0
+        return [], state.get("cursor", 0)
 
     N = len(all_accounts)
     cycle_num = state.get("cursor", 0) // N if N else 0
     start = state["cursor"] % N
 
-    # Print priority distribution
+    # ── Cycle order: reshuffle at the start of each cycle ──
+    # Accounts are visited in a random order each cycle so no account
+    # is always scraped before/after the same neighbours, and new accounts
+    # slot in naturally without disrupting the existing order mid-cycle.
+    cycle_order = state.get("cycle_order", [])
+    current_set = set(all_accounts)
+    existing_set = set(cycle_order)
+
+    if start == 0 or not cycle_order:
+        # New cycle (or very first run) — full reshuffle
+        cycle_order = all_accounts.copy()
+        random.shuffle(cycle_order)
+        state["cycle_order"] = cycle_order
+        if cycle_num > 0 or not state.get("cycle_order"):
+            print(f"   🔀 New cycle order shuffled ({N} accounts)")
+    elif existing_set != current_set:
+        # Accounts added/removed mid-cycle — patch without reshuffling
+        removed = existing_set - current_set
+        added = [a for a in all_accounts if a not in existing_set]
+        cycle_order = [a for a in cycle_order if a not in removed] + added
+        state["cycle_order"] = cycle_order
+        if added:
+            print(f"   ➕ {len(added)} new account(s) appended to current cycle order")
+        if removed:
+            print(f"   ➖ {len(removed)} removed account(s) dropped from cycle order")
+
+    # Use the (possibly shuffled) cycle order for cursor traversal
+    N = len(cycle_order)
+    start = state["cursor"] % N
+
+    now = datetime.now(timezone.utc)
+    last_scraped = state.get("last_scraped", {})
+
+    # ── Tier 1: p1 accounts overdue (>30h since last scrape) ──
+    P1_MAX_AGE_H = 30
+    overdue_p1: list[str] = []
+    for acct, prio in priorities.items():
+        if prio == 1:
+            ls = last_scraped.get(acct)
+            if ls is None:
+                overdue_p1.append(acct)
+            else:
+                age_h = (now - datetime.fromisoformat(ls)).total_seconds() / 3600
+                if age_h > P1_MAX_AGE_H:
+                    overdue_p1.append(acct)
+    random.shuffle(overdue_p1)  # Don't always pick the same overdue account first
+    p1_override = overdue_p1[:3]
+    p1_override_set = set(p1_override)
+
+    # Print priority distribution + overdue count
     from collections import Counter
     prio_dist = Counter(priorities.values())
     dist_str = ", ".join(f"p{k}×{v}" for k, v in sorted(prio_dist.items()))
-    print(f"   Priorities: {dist_str}  (cycle {cycle_num})")
+    overdue_note = f", {len(overdue_p1)} p1 overdue" if overdue_p1 else ""
+    print(f"   Priorities: {dist_str}  (cycle {cycle_num}{overdue_note})")
 
-    batch: list[str] = []
+    # ── Tier 2: random count of cursor accounts ──
+    cursor_size = random.randint(1, max(1, max_cursor_size))
+    cursor_batch: list[str] = []
     cursor_advance = 0
     checked = 0
 
-    while len(batch) < batch_size and checked < N:
+    while len(cursor_batch) < cursor_size and checked < N:
         idx = (start + checked) % N
-        account = all_accounts[idx]
+        account = cycle_order[idx]
         checked += 1
         cursor_advance += 1
 
+        if account in p1_override_set:
+            continue  # Already in batch via tier-1 override
+
         prio = priorities.get(account, 3)
-        # Stagger accounts of the same priority across cycles using a stable
-        # hash of the account name as the offset. This means:
-        #   - Every cycle has ~equal load (no giant cycle-0 spike)
-        #   - Adding a new account never reshuffles existing ones
-        #   - p2 accounts: half active each cycle, p3: one-third each cycle, etc.
         if prio > 1 and (cycle_num + _account_stagger(account)) % prio != 0:
             continue
 
-        batch.append(account)
+        cursor_batch.append(account)
 
     new_cursor = (start + cursor_advance) % N
+    batch = p1_override + cursor_batch
     return batch, new_cursor
 
 
@@ -390,11 +447,34 @@ def _fmt_duration(secs: float) -> str:
     return f"{secs:.1f}s"
 
 
-def run_scrape(batch_size: int):
-    """Scrape the next batch of accounts."""
+def run_scrape(batch_size: int, force: bool = False):
+    """Scrape the next batch of accounts.
+
+    Args:
+        batch_size: Maximum number of accounts to pull from the cursor
+                    (actual count is randomised 1..batch_size).
+        force:      If True, skip the random-skip check (used for manual/
+                    workflow_dispatch runs so they always execute).
+    """
     run_start = time.time()
     time_in_delays = 0.0  # Track time spent in deliberate delays
     time_in_retries = 0.0  # Track time spent in retry waits
+
+    # ── Random skip: ~30% of scheduled slots are silently dropped ──
+    # This creates organic timing variation without changing the cron schedule.
+    # Manual runs (force=True) always execute.
+    SKIP_PROB = 0.30
+    if not force and random.random() < SKIP_PROB:
+        print(f"⏩ Randomly skipping this slot ({int(SKIP_PROB * 100)}% skip rate for organic timing)")
+        return
+
+    # ── Random startup delay: 0–5 minutes ──
+    # Spreads actual scrape start times across the 30-min window so
+    # Instagram doesn't see perfectly regular 30-min intervals.
+    if not force:
+        startup_delay = random.uniform(0, 300)  # 0–5 min
+        print(f"⏱️  Startup delay: {startup_delay:.0f}s (randomised)…")
+        time.sleep(startup_delay)
 
     state = load_state()
 
@@ -406,7 +486,7 @@ def run_scrape(batch_size: int):
         print("   The scraper will resume automatically once a run succeeds.")
         return  # exit cleanly — no failure, no notification spam
 
-    batch, new_cursor = get_batch(state, batch_size)
+    batch, new_cursor = get_batch(state, max_cursor_size=batch_size)
 
     if not batch:
         print("No accounts to scrape.")
@@ -519,9 +599,10 @@ def run_scrape(batch_size: int):
             # Build a short status line for this account
             elapsed_total = _fmt_duration(time.time() - run_start)
 
-            # Persist latest post date regardless of outcome
+            # Persist latest post date and scrape timestamp regardless of outcome
             if latest_date:
                 state.setdefault("last_post_dates", {})[account] = latest_date
+            state.setdefault("last_scraped", {})[account] = datetime.now(timezone.utc).isoformat()
 
             if stats.get("error"):
                 reason = f"error after {duration:.1f}s"
@@ -658,7 +739,9 @@ def run_scrape(batch_size: int):
 def main():
     parser = argparse.ArgumentParser(description="Drip-feed IG scraper")
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE_DEFAULT,
-                        help=f"Accounts per run (default: {BATCH_SIZE_DEFAULT})")
+                        help=f"Max cursor accounts per run (default: {BATCH_SIZE_DEFAULT}; actual count is randomised 1..N)")
+    parser.add_argument("--force", action="store_true",
+                        help="Skip random-skip and startup-delay (for manual/workflow_dispatch runs)")
     parser.add_argument("--list", action="store_true",
                         help="Just print the batch, don't scrape")
     parser.add_argument("--status", action="store_true",
@@ -714,11 +797,11 @@ def main():
         return
 
     if args.list:
-        batch, _ = get_batch(state, args.batch_size)
+        batch, _ = get_batch(state, max_cursor_size=args.batch_size)
         print(f"Next batch ({len(batch)}): {', '.join(f'@{a}' for a in batch)}")
         return
 
-    run_scrape(args.batch_size)
+    run_scrape(args.batch_size, force=args.force)
 
 
 if __name__ == "__main__":
