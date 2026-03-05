@@ -99,24 +99,33 @@ def push_to_deals_db(data: dict, log_fn=None) -> bool:
         "properties": _build_deals_props(data),
     }
 
-    resp = requests.post(
-        f"{NOTION_API}/pages", headers=NOTION_HEADERS, json=payload, timeout=30,
-    )
+    for attempt in range(3):
+        try:
+            resp = requests.post(
+                f"{NOTION_API}/pages", headers=NOTION_HEADERS, json=payload, timeout=60,
+            )
+            if resp.status_code == 429:
+                time.sleep(1.5)
+                continue
+            resp.raise_for_status()
+            if log_fn:
+                log_fn(f"  💰 Routed to Deals DB: {data.get('event_name')}")
+            return True
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError,
+                requests.exceptions.HTTPError) as e:
+            if attempt < 2:
+                wait = 10 * (attempt + 1)
+                if log_fn:
+                    log_fn(f"  Deals DB error (attempt {attempt + 1}/3), retrying in {wait}s… ({e})")
+                time.sleep(wait)
+            else:
+                if log_fn:
+                    log_fn(f"  ⚠️  Deals DB create failed after 3 attempts: {e}")
+                return False
 
-    if resp.status_code == 429:
-        time.sleep(1.5)
-        resp = requests.post(
-            f"{NOTION_API}/pages", headers=NOTION_HEADERS, json=payload, timeout=30,
-        )
-
-    if resp.status_code < 400:
-        if log_fn:
-            log_fn(f"  💰 Routed to Deals DB: {data.get('event_name')}")
-        return True
-    else:
-        if log_fn:
-            try:
-                log_fn(f"  ⚠️  Deals DB create failed: {resp.status_code} {resp.json()}")
-            except Exception:
-                log_fn(f"  ⚠️  Deals DB create failed: {resp.status_code}")
-        return False
+    if log_fn:
+        try:
+            log_fn(f"  ⚠️  Deals DB create failed: {resp.status_code} {resp.json()}")
+        except Exception:
+            log_fn(f"  ⚠️  Deals DB create failed: {resp.status_code}")
+    return False
