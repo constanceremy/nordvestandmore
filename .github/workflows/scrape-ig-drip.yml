@@ -68,6 +68,19 @@ jobs:
             echo "📸 Force-refreshing session from secret (overwriting local file)"
             mkdir -p "$SESSION_DIR"
             echo "$IG_SESSION_B64" | base64 -d > "$SESSION_FILE"
+            # Also clear any suspension flag so the scraper doesn't exit early
+            STATE_FILE="${IG_STATE_FILE:-/tmp/ig_cursor/state.json}"
+            if [ -f "$STATE_FILE" ]; then
+              python3 -c "
+import json, sys
+f = open('$STATE_FILE')
+s = json.load(f); f.close()
+s['suspended'] = False
+s['auth_failure_streak'] = 0
+open('$STATE_FILE', 'w').write(json.dumps(s, indent=2))
+print('🔓 Suspension cleared from state file')
+" || echo "⚠️  Could not clear suspension (state file may not exist yet)"
+            fi
           elif [ -f "$SESSION_FILE" ]; then
             echo "📸 Using existing session file at $SESSION_FILE (preserving token rotations)"
           elif [ -n "$IG_SESSION_B64" ]; then
