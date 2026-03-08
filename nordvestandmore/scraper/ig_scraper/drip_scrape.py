@@ -736,6 +736,66 @@ def run_scrape(batch_size: int, force: bool = False):
         sys.exit(1)
 
 
+def export_tracker(output_path: str = ""):
+    """Write a markdown table of all accounts with last scrape time, last post date, and failures."""
+    all_accounts, priorities = load_accounts()
+    state = load_state()
+    last_scraped = state.get("last_scraped", {})
+    last_post_dates = state.get("last_post_dates", {})
+    failures = state.get("failures", {})
+
+    now = datetime.now(timezone.utc)
+
+    def age_str(iso: str | None) -> str:
+        if not iso:
+            return "never"
+        try:
+            dt = datetime.fromisoformat(iso)
+            hours = (now - dt).total_seconds() / 3600
+            if hours < 1:
+                return f"{int(hours * 60)}m ago"
+            if hours < 48:
+                return f"{hours:.0f}h ago"
+            return f"{hours / 24:.0f}d ago"
+        except Exception:
+            return iso
+
+    rows = []
+    for acct in all_accounts:
+        prio = priorities.get(acct, 3)
+        scraped = last_scraped.get(acct)
+        post_date = last_post_dates.get(acct, "—")
+        failed = "⚠️ " + failures[acct].get("reason", "?") if acct in failures else ""
+        rows.append((age_str(scraped), acct, prio, scraped or "", post_date, failed))
+
+    # Sort: never scraped first, then oldest → newest
+    rows.sort(key=lambda r: r[3])
+
+    lines = [
+        f"# Instagram Scrape Tracker",
+        f"",
+        f"_Updated: {now.strftime('%Y-%m-%d %H:%M UTC')} · {len(all_accounts)} accounts_",
+        f"",
+        f"| Account | Priority | Last scraped | Last post | Status |",
+        f"|---------|----------|--------------|-----------|--------|",
+    ]
+    for age, acct, prio, _, post_date, failed in rows:
+        status = failed if failed else "✅"
+        lines.append(f"| @{acct} | p{prio} | {age} | {post_date} | {status} |")
+
+    not_seen = [a for a in all_accounts if a not in last_scraped]
+    if not_seen:
+        lines += ["", f"**Not yet scraped ({len(not_seen)}):** " + ", ".join(f"`@{a}`" for a in not_seen)]
+
+    content = "\n".join(lines) + "\n"
+
+    if output_path:
+        Path(output_path).write_text(content)
+        print(f"📊 Tracker written to {output_path} ({len(all_accounts)} accounts)")
+    else:
+        print(content)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Drip-feed IG scraper")
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE_DEFAULT,
@@ -750,9 +810,15 @@ def main():
                         help="Output daily digest and reset failure counters")
     parser.add_argument("--last-posts", action="store_true",
                         help="Show last seen post date for each account")
+    parser.add_argument("--export-tracker", metavar="FILE", nargs="?", const="scrape_tracker.md",
+                        help="Write markdown tracker table to FILE (default: scrape_tracker.md)")
     parser.add_argument("--unsuspend", action="store_true",
                         help="Clear suspension flag and auth_failure_streak from state (use after refreshing session)")
     args = parser.parse_args()
+
+    if args.export_tracker is not None:
+        export_tracker(args.export_tracker)
+        return
 
     if args.unsuspend:
         state = load_state()

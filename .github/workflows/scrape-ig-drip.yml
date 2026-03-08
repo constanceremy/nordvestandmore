@@ -47,9 +47,9 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          cd nordvestandmore
-          if [ -d venv ]; then
-            source venv/bin/activate
+          cd nordvestandmore/scraper
+          if [ -d ../venv ]; then
+            source ../venv/bin/activate
           fi
           pip install -r requirements.txt
 
@@ -88,11 +88,11 @@ jobs:
           IG_USERNAME: ${{ secrets.IG_USERNAME }}
           IG_PASSWORD: ${{ secrets.IG_PASSWORD }}
           GOOGLE_SHEET_CSV_URL: ${{ secrets.GOOGLE_SHEET_CSV_URL }}
-        working-directory: nordvestandmore/ig_scraper
+        working-directory: nordvestandmore/scraper/ig_scraper
         run: |
           # Activate venv if it exists
-          if [ -f ../venv/bin/activate ]; then
-            source ../venv/bin/activate
+          if [ -f ../../venv/bin/activate ]; then
+            source ../../venv/bin/activate
           fi
 
           if [ -n "${{ inputs.accounts }}" ]; then
@@ -127,7 +127,7 @@ jobs:
               "https://ntfy.sh/$NTFY_TOPIC" || true
           fi
 
-  # ── Daily digest: runs once per day, summarizes failures ──
+  # ── Daily digest + tracker: runs once per day at 06:00 UTC ──
   daily-report:
     runs-on: self-hosted
     timeout-minutes: 5
@@ -154,13 +154,28 @@ jobs:
         if: steps.check.outputs.run == 'true'
         uses: actions/checkout@v4
 
-      - name: Generate daily report
+      - name: Generate daily report + tracker
         if: steps.check.outputs.run == 'true'
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-        working-directory: nordvestandmore/ig_scraper
+        working-directory: nordvestandmore/scraper/ig_scraper
         run: |
-          if [ -f ../venv/bin/activate ]; then
-            source ../venv/bin/activate
+          if [ -f ../../venv/bin/activate ]; then
+            source ../../venv/bin/activate
           fi
           python3 drip_scrape.py --daily-report
+          python3 drip_scrape.py --export-tracker ../scrape_tracker.md
+
+      - name: Commit tracker
+        if: steps.check.outputs.run == 'true'
+        run: |
+          cd nordvestandmore/scraper
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add scrape_tracker.md
+          if git diff --cached --quiet; then
+            echo "No tracker changes to commit"
+          else
+            git commit -m "chore: update scrape tracker [skip ci]"
+            git push
+          fi
