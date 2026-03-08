@@ -910,7 +910,7 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
                    and duplicate_of. Used when merging a lower-priority source into an
                    existing higher-priority entry.
     """
-    # Merge-only mode: just add IG metadata + cross-platform note to the winning entry
+    # Merge-only mode: add metadata + enrich name/description if this source has more info
     if merge_only:
         props = {}
         if ev.get("ig_handle"):
@@ -919,6 +919,14 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             props["To tag"] = {"rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]}
         if ev.get("duplicate_of"):
             props["Duplicate of"] = {"rich_text": [{"text": {"content": ev["duplicate_of"][:2000]}}]}
+        if ev.get("name_is_richer"):
+            name = ev.get("event_name") or ""
+            if name:
+                props["Event Name"] = {"title": [{"text": {"content": name[:2000]}}]}
+        if ev.get("description_is_richer"):
+            desc = ev.get("description") or ""
+            if desc:
+                props["Description"] = {"rich_text": [{"text": {"content": desc[:2000]}}]}
         return props
 
     props = {}
@@ -1363,10 +1371,24 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                 dupe_src = dupe.get('source', '')
 
                 if current_priority > dupe_priority:
-                    # Current (FB) is lower priority than existing (website) — only add FB metadata
+                    # Current (FB) is lower priority than existing (website) — merge FB metadata in
                     merge_only = True
                     ev["duplicate_of"] = f"Also at: {dupe_src} ({dupe_date})"
-                    log(f"    ⬇️  Lower priority — enriching existing entry: {dupe.get('name')}")
+                    # Check if FB has a richer name than the existing entry
+                    existing_name = dupe.get("name") or ""
+                    incoming_name = ev.get("event_name") or ""
+                    if incoming_name and existing_name:
+                        name_lower = incoming_name.lower().strip()
+                        exist_lower = existing_name.lower().strip()
+                        is_superset = exist_lower in name_lower and len(incoming_name) > len(existing_name)
+                        is_substantially_longer = len(incoming_name) > len(existing_name) * 1.3
+                        if is_superset or is_substantially_longer:
+                            ev["name_is_richer"] = True
+                            log(f"    ✏️  Richer name from FB: '{incoming_name}' (was: '{existing_name}')")
+                    incoming_desc = ev.get("description") or ""
+                    if incoming_desc and len(incoming_desc) > 50:
+                        ev["description_is_richer"] = True
+                    log(f"    ⬇️  Lower priority — enriching existing entry: {existing_name}")
                 else:
                     # Current (FB) is higher or equal priority — upgrade existing entry's link/data
                     ev["duplicate_of"] = f"Also at: {dupe_src} ({dupe_date})"

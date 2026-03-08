@@ -558,7 +558,7 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
                    and duplicate_of. Used when merging a lower-priority source into an
                    existing higher-priority entry.
     """
-    # Merge-only mode: just add IG metadata + cross-platform note to the winning entry
+    # Merge-only mode: add IG metadata + enrich name/description if IG has more info
     if merge_only:
         props = {}
         if ev.get("ig_handle"):
@@ -567,6 +567,16 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             props["To tag"] = {"rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]}
         if ev.get("duplicate_of"):
             props["Duplicate of"] = {"rich_text": [{"text": {"content": ev["duplicate_of"][:2000]}}]}
+        # If IG name is richer/more specific than existing entry, update the title too
+        if ev.get("name_is_richer"):
+            name = ev.get("event_name") or ""
+            if name:
+                props["Event Name"] = {"title": [{"text": {"content": name[:2000]}}]}
+        # If IG description is richer/longer, update description too
+        if ev.get("description_is_richer"):
+            desc = ev.get("description") or ""
+            if desc:
+                props["Description"] = {"rich_text": [{"text": {"content": desc[:2000]}}]}
         return props
 
     props = {}
@@ -956,10 +966,27 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 dupe_src = dupe.get('source', '')
 
                 if current_priority > dupe_priority:
-                    # IG is lower priority than existing (FB/website) — only add IG metadata
+                    # IG is lower priority than existing (FB/website) — merge IG metadata in
                     merge_only = True
                     ev["duplicate_of"] = f"Also at: @{account} ({dupe_date})"
-                    log(f"    ⬇️  Lower priority (IG) — enriching existing entry: {dupe.get('name')}")
+                    # Check if IG has a richer name or description than the existing entry
+                    existing_name = dupe.get("name") or ""
+                    incoming_name = ev.get("event_name") or ""
+                    if incoming_name and existing_name:
+                        # Richer if: incoming contains existing as substring + is longer,
+                        # or is more than 30% longer (catches extra details appended)
+                        name_lower = incoming_name.lower().strip()
+                        exist_lower = existing_name.lower().strip()
+                        is_superset = exist_lower in name_lower and len(incoming_name) > len(existing_name)
+                        is_substantially_longer = len(incoming_name) > len(existing_name) * 1.3
+                        if is_superset or is_substantially_longer:
+                            ev["name_is_richer"] = True
+                            log(f"    ✏️  Richer name from IG: '{incoming_name}' (was: '{existing_name}')")
+                    incoming_desc = ev.get("description") or ""
+                    existing_desc = dupe.get("description") or ""
+                    if incoming_desc and len(incoming_desc) > max(len(existing_desc), 50):
+                        ev["description_is_richer"] = True
+                    log(f"    ⬇️  Lower priority (IG) — enriching existing entry: {existing_name}")
                 else:
                     # IG is upgrading an existing lower-priority entry
                     ev["duplicate_of"] = f"Also at: {dupe_src} ({dupe_date})"
