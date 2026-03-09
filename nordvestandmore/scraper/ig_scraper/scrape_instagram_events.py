@@ -585,9 +585,10 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
 
     props = {}
 
-    # Name (title)
-    name = ev.get("event_name") or "Untitled Event"
-    props["Event Name"] = {"title": [{"text": {"content": name[:2000]}}]}
+    # Name (title) — only set on create, preserve manual edits on update
+    if not is_update:
+        name = ev.get("event_name") or "Untitled Event"
+        props["Event Name"] = {"title": [{"text": {"content": name[:2000]}}]}
 
     # URL — link to source post
     if ev.get("url"):
