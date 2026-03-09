@@ -347,7 +347,8 @@ def setup_gemini():
 
 
 def analyze_post_with_gemini(
-    client, caption: str, image_paths: list[str] | str | None, account: str
+    client, caption: str, image_paths: list[str] | str | None, account: str,
+    post_date: date | None = None,
 ) -> list[dict]:
     """
     Send post caption + ALL images to Gemini. Returns a list of event dicts.
@@ -358,6 +359,9 @@ def analyze_post_with_gemini(
       - a list of file paths (carousel slides)
       - a single string path (backward compat)
       - None
+
+    post_date: the date the post was published — used so Gemini resolves relative
+    dates ("this Saturday", "next weekend") correctly relative to the post, not today.
     """
     # Normalize image_paths to a list
     if image_paths is None:
@@ -411,7 +415,7 @@ Respond ONLY with valid JSON — an array of events:
 }}
 
 Rules:
-- The current date is {datetime.now().strftime('%Y-%m-%d')}. If no year is mentioned, assume the next upcoming occurrence.
+- This post was published on {(post_date or date.today()).strftime('%Y-%m-%d')} ({(post_date or date.today()).strftime('%A')}). Resolve ALL relative dates ("this Saturday", "next weekend", "tomorrow", etc.) relative to the POST DATE, not today's date.
 - If the same event repeats on multiple dates, create a SEPARATE entry for EACH date.
 - If NO events are found, return {{"events": []}}
 - ALWAYS include events even if the date is in the past — we filter past events separately.
@@ -748,7 +752,8 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
             log(f"  Downloaded {len(image_paths)} carousel slides for {post_url}")
 
         # Analyze with Gemini — returns a LIST of events
-        events = analyze_post_with_gemini(client, caption, image_paths, account)
+        events = analyze_post_with_gemini(client, caption, image_paths, account,
+                                          post_date=post.date_utc.date())
 
         if not events:
             img_note = f" (⚠️ image missing — may be a flyer post!)" if not image_paths else ""
