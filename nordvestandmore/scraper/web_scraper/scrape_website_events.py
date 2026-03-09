@@ -3205,8 +3205,8 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
 
     props = {}
 
-    # Name (title) — only set on create, preserve manual edits on update
-    if not is_update:
+    # Name (title) — set on create, or on update only if incoming name is richer
+    if not is_update or ev.get("name_is_richer"):
         name = ev.get("event_name") or "Untitled Event"
         props["Event Name"] = {"title": [{"text": {"content": name[:2000]}}]}
 
@@ -3248,8 +3248,8 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             "rich_text": [{"text": {"content": ev["organizer"][:2000]}}]
         }
 
-    # Description — only set on create, preserve manual edits on update
-    if ev.get("description") and not is_update:
+    # Description — set on create, or on update only if incoming is richer
+    if ev.get("description") and (not is_update or ev.get("description_is_richer")):
         props["Description"] = {
             "rich_text": [{"text": {"content": ev["description"][:2000]}}]
         }
@@ -3554,6 +3554,24 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
 
         try:
             if page_id:
+                # Check if incoming name/description is richer than existing (same-source update)
+                if not merge_only and not ev.get("name_is_richer"):
+                    existing_entry = next((e for e in all_entries if e.get("page_id") == page_id), None)
+                    if existing_entry:
+                        existing_name = existing_entry.get("name") or ""
+                        incoming_name = ev.get("event_name") or ""
+                        if incoming_name and existing_name:
+                            name_lower = incoming_name.lower().strip()
+                            exist_lower = existing_name.lower().strip()
+                            is_superset = exist_lower in name_lower and len(incoming_name) > len(existing_name)
+                            is_substantially_longer = len(incoming_name) > len(existing_name) * 1.3
+                            if is_superset or is_substantially_longer:
+                                ev["name_is_richer"] = True
+                                log(f"    ✏️  Richer name: '{incoming_name}' (was: '{existing_name}')")
+                        existing_desc = existing_entry.get("description") or ""
+                        incoming_desc = ev.get("description") or ""
+                        if incoming_desc and len(incoming_desc) > max(len(existing_desc), 50):
+                            ev["description_is_richer"] = True
                 # Update existing
                 resp = notion_update(page_id, ev, merge_only=merge_only)
                 if resp.status_code == 429:
