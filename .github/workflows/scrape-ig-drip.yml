@@ -114,7 +114,7 @@ jobs:
 
       # ── Failure notification ──
       - name: Notify on failure
-        if: failure() || cancelled()
+        if: failure()
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
