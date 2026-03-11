@@ -189,7 +189,7 @@ export async function getEvents(upcoming = true): Promise<EventItem[]> {
         maxSpots: getNumber(p["Max Spots"]),
         bookedSpots: getNumber(p["Booked Spots"]),
         eventType: getText(p["Source Type"]) || getText(p["Event Type"]),
-        tags: getMultiSelect(p["Tags"]),
+        tags: getMultiSelect(p["Tags"]).length > 0 ? getMultiSelect(p["Tags"]) : getText(p["Tags"]) ? [getText(p["Tags"])] : [],
         coverImage: getFiles(p["Cover Image"]),
         isRecurring: getText(p["Source Type"]) === "Recurring",
         recurrenceRule: getText(p["Recurrence Rule"]),
