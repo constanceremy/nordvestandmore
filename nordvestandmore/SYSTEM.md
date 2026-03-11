@@ -24,23 +24,31 @@ NV & more is a Copenhagen events and experiences platform. It has two main funct
 
 ## Website
 
-**Stack:** Next.js 15, Tailwind CSS v4, deployed on Vercel
+**Stack:** Next.js 16, React 19, Tailwind CSS v4, deployed on Vercel
 
 **Root directory on Vercel:** `nordvestandmore/website`
 
 **Cache:** Pages revalidate every 60 minutes (ISR). To force an immediate refresh, trigger a redeploy on Vercel.
 
+### Design
+
+- **Heading font:** DM Serif Display (serif, from Google Fonts)
+- **Body font:** System sans-serif
+- **Style inspiration:** Tipster.io — thin/light weight sans, all-caps labels, editorial grid
+- **Palette:** Black and white, minimal — uppercase tracking, border-black grid aesthetic
+- **Logo:** Pink circle (`/public/logo.jpg`) in nav
+
 ### Pages
 
 | URL | What it does |
 |-----|-------------|
-| `/` | Home |
+| `/` | Home — hero, upcoming events strip, latest blog posts |
 | `/events` | Community events feed — filterable by date/period and location |
 | `/events/[slug]` | Detail page for NV & more's own events (scraped events link externally) |
 | `/with-us` | NV & more's own bookable sessions list |
 | `/with-us/[id]` | Session detail page with booking CTA |
 | `/blog` | Blog post list |
-| `/blog/[slug]` | Blog post detail |
+| `/blog/[slug]` | Blog post detail (renders Notion blocks) |
 | `/about` | About page |
 | `/terms` | Terms of Sale (pulled from Notion) |
 | `/privacy` | Privacy Policy (pulled from Notion) |
@@ -53,11 +61,25 @@ NV & more is a Copenhagen events and experiences platform. It has two main funct
 | `src/lib/notion.ts` | All Notion queries and TypeScript types |
 | `src/lib/stripe.ts` | Stripe client |
 | `src/lib/supabase.ts` | Supabase client |
-| `src/components/Nav.tsx` | Navigation with NV & more logo |
+| `src/components/Nav.tsx` | Sticky nav with logo, desktop links, mobile drawer |
+| `src/components/Footer.tsx` | Footer with links, social, copyright |
 | `src/components/BookButton.tsx` | Stripe checkout trigger button |
-| `src/components/EventFilters.tsx` | Date/period pills + location combobox |
+| `src/components/EventFilters.tsx` | Date/period pills + location combobox (desktop & mobile) |
+| `src/components/NotionBlocks.tsx` | Renders Notion block content for blog posts |
 | `src/app/api/checkout/route.ts` | Creates Stripe checkout session |
 | `src/app/api/webhook/route.ts` | Handles Stripe webhook after payment |
+
+### Key npm dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `@notionhq/client` | Notion API |
+| `stripe` | Stripe server SDK |
+| `@stripe/stripe-js` | Stripe client SDK |
+| `@supabase/supabase-js` | Supabase client |
+| `nodemailer` | Confirmation emails via Gmail SMTP |
+| `lucide-react` | Icons |
+| `tailwindcss` v4 | Styling |
 
 ---
 
@@ -72,8 +94,8 @@ Notion is the content management layer. All content is managed here and pulled b
 | Experiences | `320375efa2cc809ca2dae69a1aa15423` | NV & more experience templates |
 | Sessions | `320375efa2cc8068b2b4f8428008d1ff` | Dated instances of experiences |
 | Booking Policies | `320375efa2cc8053872ee9636f1b100e` | Cancellation/booking rules |
-| Terms of Sale | `320375efa2cc805caf4edd4e2b0ddf36` | Terms page content (Notion page) |
-| Privacy Policy | `320375efa2cc80beaa21d8119d085d55` | Privacy policy content (Notion page) |
+| Terms of Sale | `320375efa2cc805caf4edd4e2b0ddf36` | Terms page content (Notion page, not DB) |
+| Privacy Policy | `320375efa2cc80beaa21d8119d085d55` | Privacy policy content (Notion page, not DB) |
 
 ### Key Notion fields
 
@@ -81,14 +103,18 @@ Notion is the content management layer. All content is managed here and pulled b
 - `Own Event` checkbox — if checked, links internally on the website; if unchecked, links externally
 - `Approved` checkbox — must be checked for the event to appear on the website (own events bypass this)
 - `Possible Duplicate` checkbox — if checked, event is hidden
+- `Deleted` checkbox — if checked, event is hidden
 
 **Sessions DB**
 - `Booked spots` — incremented automatically by the webhook on every confirmed payment
 - `Max spots` — controls availability display and sold-out state
 - `Experience` — relation to Experiences DB
+- `Status` — must be "Open" for session to appear
+- `Price override` — overrides the experience-level price if set
 
 **Experiences DB**
 - `Stripe Product ID` — the `prod_...` ID from Stripe, links the experience to a Stripe product
+- `Active` checkbox — controls whether experience appears on `/with-us`
 
 ---
 
@@ -140,6 +166,7 @@ Supabase project: `lpjewaznxlggjoxdetsh.supabase.co`
 - Switch to live mode before launch: swap `sk_test_` / `pk_test_` keys for `sk_live_` / `pk_live_` and create a new live webhook endpoint
 - Webhook endpoint registered at: `https://nordvestandmore.vercel.app/api/webhook`
 - Event listened to: `checkout.session.completed`
+- Test card: `4242 4242 4242 4242`, any future expiry, any CVC
 
 ---
 
@@ -152,35 +179,62 @@ The scraper populates the Notion Events DB with community events. It runs via Gi
 | Scraper | What it scrapes | Schedule |
 |---------|----------------|---------|
 | Instagram drip scraper | ~144 IG accounts | Every 30 min (5 accounts/run) on self-hosted Mac runner |
-| Web scraper | Venue websites (Vierrummet, Lygten, etc.) | Daily at ~9:30 PM Copenhagen |
-| Facebook scraper | Facebook events | Daily (same job) |
+| Web scraper | Venue websites (Vierrummet, Lygten, Thoravej 29, etc.) | Daily at ~9:30 PM Copenhagen |
+| Facebook scraper | Facebook pages | Daily (same job as web scraper) |
 
 ### GitHub Actions workflows
 
-| Workflow | File | Schedule |
-|----------|------|---------|
-| Scrape Events | `scrape-events.yml` | Daily 19:30 UTC |
-| Instagram Drip Scraper | `scrape-ig-drip.yml` | Every 30 minutes |
-| Sync to Wix | `sync-to-wix.yml` | Daily 03:00 UTC (to be retired) |
+| Workflow | File | Schedule | Runner |
+|----------|------|---------|--------|
+| Scrape Events | `scrape-events.yml` | Daily 19:30 UTC | GitHub-hosted (Ubuntu) |
+| Instagram Drip Scraper | `scrape-ig-drip.yml` | Every 30 minutes | Self-hosted Mac (residential IP) |
+| Sync to Wix | `sync-to-wix.yml` | Daily 03:00 UTC | GitHub-hosted (to be retired) |
 
-### Scraper filter (what gets shown)
+> The self-hosted Mac runner is required for Instagram scraping to avoid rate limits — a residential IP is needed.
 
-Events appear on the website only if:
+### Scraper filter (what gets shown on website)
+
+Events appear only if:
 - Not deleted
 - Not marked as a possible duplicate
 - Start date is today or in the future
 - Either: `Approved = true` OR `Own Event = true`
 
+### source_mapping.csv
+
+Master list of all venues/accounts (`scraper/source_mapping.csv`). Maps venue names to Instagram handles, Facebook pages, and websites. Used by the scraper as the single source of truth for what to scrape and by `dedup.py` to match cross-platform events to the same venue.
+
+Columns: `name, instagram, facebook, fb_filter, fb_exclude, website, priority`
+
+### AI extraction
+
+The scraper uses **Google Gemini** (free tier) to extract structured event data (title, date, time, location, description) from Instagram posts and website HTML.
+
 ### Key scraper files
 
 | File | Purpose |
 |------|---------|
-| `scraper/run_scraper.py` | Main entry point |
-| `scraper/scrape_posts.py` | Scrapes and writes events to Notion |
-| `scraper/ig_scraper/drip_scrape.py` | Instagram drip scraper |
-| `scraper/dedup.py` | Deduplication logic |
-| `scraper/auto_tag.py` | Auto-tagging |
-| `scraper/fix_locations.py` | Location normalisation |
+| `scraper/run_scraper.py` | Main entry point — orchestrates all scrapers |
+| `scraper/scrape_posts.py` | Manual Instagram post scraper (interactive) |
+| `scraper/ig_scraper/drip_scrape.py` | Instagram drip scraper (30-min batches) |
+| `scraper/ig_scraper/scrape_instagram_events.py` | Core IG scraping logic |
+| `scraper/fb_scraper/scrape_facebook_events.py` | Facebook events scraper |
+| `scraper/web_scraper/scrape_website_events.py` | Website/venue scraper |
+| `scraper/nv_scraper/scrape_vierrummet.py` | Vierrummet-specific scraper |
+| `scraper/nv_scraper/scrape_thoravej29.py` | Thoravej 29-specific scraper |
+| `scraper/dedup.py` | Cross-platform duplicate detection and flagging |
+| `scraper/auto_tag.py` | Auto-tags events by keyword/pattern (~40+ rules) |
+| `scraper/fix_locations.py` | Normalises location names |
+| `scraper/recurring_events.py` | Handles recurring event logic |
+| `scraper/deals_db.py` | Pushes deals/promotions to Notion |
+| `scraper/hours_db.py` | Manages business hours in Notion |
+| `scraper/cleanup_duplicates.py` | Removes/merges flagged duplicates |
+| `scraper/retag_all.py` | Bulk re-tags all existing events |
+| `scraper/sync_to_wix.py` | Syncs Notion events to legacy Wix CMS (to be retired) |
+| `scraper/scrape_wix_blog.py` | One-off: imported blog posts from Wix |
+| `scraper/fill_blog_content.py` | Fills missing content in imported blog posts |
+| `scraper/count_mentions.py` | Counts how often IG accounts are mentioned |
+| `scraper/_import_browser_session.py` | Imports Instaloader session from browser cookies |
 
 ---
 
@@ -188,16 +242,16 @@ Events appear on the website only if:
 
 Confirmation emails are sent via **Gmail SMTP** (nodemailer) from `nordvestandmore@gmail.com` using a Google App Password.
 
-**Planned:** Reminder emails the day before an event — to be built as a GitHub Actions cron job querying Supabase for upcoming bookings.
+**Planned:** Reminder emails the day before an event — to be built as a GitHub Actions cron job querying Supabase for `event_date = tomorrow`.
 
 ---
 
 ## Environment Variables
 
-Stored in `.env.local` locally and in Vercel project settings for production.
+### Website (`website/.env.local` + Vercel project settings)
 
-| Variable | What it's for |
-|----------|--------------|
+| Variable | Purpose |
+|----------|---------|
 | `NOTION_TOKEN` | Notion integration token |
 | `NOTION_EVENTS_DB_ID` | Events database |
 | `NOTION_BLOG_DB_ID` | Blog database |
@@ -213,6 +267,18 @@ Stored in `.env.local` locally and in Vercel project settings for production.
 | `GMAIL_USER` | Gmail address for sending emails |
 | `GMAIL_APP_PASSWORD` | Gmail App Password |
 
+### Scraper (`.env` at repo root + GitHub Actions secrets)
+
+| Variable | Purpose |
+|----------|---------|
+| `NOTION_TOKEN` | Notion integration token |
+| `NOTION_DATABASE_ID` | Events database |
+| `GEMINI_API_KEY` | Google Gemini API (AI event extraction) |
+| `WIX_API_KEY` | Wix CMS API (for sync, to be retired) |
+| `WIX_SITE_ID` | Wix site ID |
+| `IG_SESSION_B64` | Base64-encoded Instaloader session file (GitHub secret) |
+| `FB_COOKIES_B64` | Base64-encoded Facebook session cookies (GitHub secret) |
+
 ---
 
 ## What's still to do
@@ -220,6 +286,8 @@ Stored in `.env.local` locally and in Vercel project settings for production.
 - [ ] Switch Stripe to live mode before launch
 - [ ] Build reminder email cron job (day before event, queries Supabase)
 - [ ] Deploy to custom domain `nordvestandmore.com`
-- [ ] Privacy policy — keep updated in Notion
-- [ ] Blog: add pagination for very long posts (getPageBlocks only fetches first 100 blocks)
+- [ ] Blog: add pagination for very long posts (`getPageBlocks` only fetches first 100 blocks)
 - [ ] Retire Wix sync once website is the primary platform
+- [ ] Fix blog post content — inline images and links missing from Wix import (manual in Notion)
+- [ ] Privacy policy — keep updated in Notion as needed
+- [ ] Consider typography update: Tipster.io uses **Neue Haas Grotesk Display Pro** (thin weight, all-caps headlines) as design reference
