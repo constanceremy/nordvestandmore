@@ -100,7 +100,7 @@ export default async function EventsPage({
         <p className="text-xs font-semibold tracking-widest uppercase text-gray-400 mb-3">
           What's on
         </p>
-        <h1 className="text-5xl md:text-7xl" style={{ fontFamily: "DM Serif Display, serif" }}>
+        <h1 className="text-5xl md:text-7xl" style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}>
           Events
         </h1>
       </div>

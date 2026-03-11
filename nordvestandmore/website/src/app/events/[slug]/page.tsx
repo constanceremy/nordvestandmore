@@ -73,7 +73,7 @@ export default async function EventPage({
             />
           ) : (
             <div className="w-full aspect-[4/3] bg-gray-100 mb-8 flex items-center justify-center border border-black">
-              <span className="text-6xl text-gray-300" style={{ fontFamily: "DM Serif Display, serif" }}>NV</span>
+              <span className="text-6xl text-gray-300" style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}>NV</span>
             </div>
           )}
 
@@ -156,7 +156,7 @@ export default async function EventPage({
 
           <h1
             className="text-4xl md:text-5xl mt-3 mb-6 leading-tight"
-            style={{ fontFamily: "DM Serif Display, serif" }}
+            style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}
           >
             {event.title}
           </h1>

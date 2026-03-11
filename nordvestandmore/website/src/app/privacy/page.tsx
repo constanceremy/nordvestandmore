@@ -18,7 +18,7 @@ export default async function PrivacyPage() {
         <p className="text-xs font-semibold tracking-widest uppercase text-gray-400 mb-3">
           Legal
         </p>
-        <h1 className="text-5xl md:text-7xl" style={{ fontFamily: "DM Serif Display, serif" }}>
+        <h1 className="text-5xl md:text-7xl" style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}>
           Privacy Policy
         </h1>
       </div>

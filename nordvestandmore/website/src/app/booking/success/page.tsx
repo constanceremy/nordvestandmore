@@ -11,7 +11,7 @@ export default function BookingSuccessPage({
       <CheckCircle size={48} className="mx-auto mb-6" />
       <h1
         className="text-4xl mb-4"
-        style={{ fontFamily: "DM Serif Display, serif" }}
+        style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}
       >
         You're booked!
       </h1>

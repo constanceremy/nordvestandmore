@@ -35,7 +35,7 @@ export default async function WithUsPage() {
         <p className="text-xs font-semibold tracking-widest uppercase text-gray-400 mb-3">
           Led by NV & more
         </p>
-        <h1 className="text-5xl md:text-7xl" style={{ fontFamily: "DM Serif Display, serif" }}>
+        <h1 className="text-5xl md:text-7xl" style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}>
           With us
         </h1>
         <p className="mt-6 text-sm text-gray-500 max-w-lg leading-relaxed">

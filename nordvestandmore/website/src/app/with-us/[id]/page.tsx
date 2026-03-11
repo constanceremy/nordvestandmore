@@ -81,7 +81,7 @@ export default async function SessionPage({
             />
           ) : (
             <div className="w-full aspect-[4/3] bg-gray-100 mb-8 flex items-center justify-center border border-black">
-              <span className="text-6xl text-gray-300" style={{ fontFamily: "DM Serif Display, serif" }}>NV</span>
+              <span className="text-6xl text-gray-300" style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}>NV</span>
             </div>
           )}
 
@@ -152,7 +152,7 @@ export default async function SessionPage({
 
           <h1
             className="text-4xl md:text-5xl mt-2 mb-6 leading-tight"
-            style={{ fontFamily: "DM Serif Display, serif" }}
+            style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}
           >
             {exp.name}
           </h1>

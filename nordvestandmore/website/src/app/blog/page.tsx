@@ -34,7 +34,7 @@ export default async function BlogPage() {
         </p>
         <h1
           className="text-5xl md:text-7xl"
-          style={{ fontFamily: "DM Serif Display, serif" }}
+          style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}
         >
           Blog
         </h1>
@@ -75,7 +75,7 @@ export default async function BlogPage() {
               </div>
               <h2
                 className={`font-medium leading-snug mb-2 ${i === 0 ? "text-3xl md:text-4xl" : "text-xl"}`}
-                style={i === 0 ? { fontFamily: "DM Serif Display, serif" } : {}}
+                style={i === 0 ? { fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" } : {}}
               >
                 {post.title}
               </h2>

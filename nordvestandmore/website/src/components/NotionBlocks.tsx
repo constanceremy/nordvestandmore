@@ -35,14 +35,14 @@ export default function NotionBlocks({ blocks }: { blocks: Block[] }) {
 
           case "heading_1":
             return (
-              <h2 key={b.id} className="text-3xl mt-10 mb-4" style={{ fontFamily: "DM Serif Display, serif" }}>
+              <h2 key={b.id} className="text-3xl mt-10 mb-4" style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}>
                 <RichText text={b.heading_1.rich_text as Parameters<typeof RichText>[0]["text"]} />
               </h2>
             );
 
           case "heading_2":
             return (
-              <h3 key={b.id} className="text-2xl mt-8 mb-3" style={{ fontFamily: "DM Serif Display, serif" }}>
+              <h3 key={b.id} className="text-2xl mt-8 mb-3" style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}>
                 <RichText text={b.heading_2.rich_text as Parameters<typeof RichText>[0]["text"]} />
               </h3>
             );

@@ -45,11 +45,11 @@ export default async function Home() {
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <section className="max-w-6xl mx-auto px-6 pt-16 pb-20 border-b border-black">
         <h1
-          className="text-[clamp(4rem,14vw,12rem)] leading-[0.9] mb-10 -ml-1"
-          style={{ fontFamily: "DM Serif Display, serif" }}
+          className="text-[clamp(4rem,14vw,12rem)] leading-[0.9] mb-10 -ml-1 font-thin tracking-tight"
+          style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}
         >
           NV<br />
-          <span className="italic">&amp; more</span>
+          &amp; more
         </h1>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-8">
           <p className="text-sm tracking-[0.2em] uppercase text-gray-500 max-w-xs leading-relaxed">
@@ -148,7 +148,7 @@ export default async function Home() {
                   />
                 ) : (
                   <div className="w-full h-48 bg-gray-100 mb-6 flex items-center justify-center border border-gray-200 group-hover:border-gray-700">
-                    <span className="text-3xl text-gray-300" style={{ fontFamily: "DM Serif Display, serif" }}>NV</span>
+                    <span className="text-3xl text-gray-300" style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}>NV</span>
                   </div>
                 )}
                 <p className="text-xs tracking-[0.25em] uppercase text-gray-400 group-hover:text-gray-300 mb-3">

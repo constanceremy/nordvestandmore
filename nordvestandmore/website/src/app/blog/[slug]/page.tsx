@@ -75,7 +75,7 @@ export default async function BlogPostPage({
 
         <h1
           className="text-4xl md:text-6xl leading-tight mb-6"
-          style={{ fontFamily: "DM Serif Display, serif" }}
+          style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}
         >
           {post.title}
         </h1>

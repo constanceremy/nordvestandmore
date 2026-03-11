@@ -9,7 +9,7 @@ export default function AboutPage() {
         </p>
         <h1
           className="text-5xl md:text-7xl"
-          style={{ fontFamily: "DM Serif Display, serif" }}
+          style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}
         >
           About
         </h1>
@@ -30,7 +30,7 @@ export default function AboutPage() {
       <div className="mt-16 border-t border-black pt-10">
         <h2
           className="text-2xl mb-6"
-          style={{ fontFamily: "DM Serif Display, serif" }}
+          style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}
         >
           Get in touch
         </h2>
