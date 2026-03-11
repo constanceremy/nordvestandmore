@@ -3,6 +3,7 @@ import { getStripe } from "@/lib/stripe";
 import { getSupabase } from "@/lib/supabase";
 import Stripe from "stripe";
 import nodemailer from "nodemailer";
+import { Client } from "@notionhq/client";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +98,21 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error("Supabase insert error:", error);
       return NextResponse.json({ error: "DB error" }, { status: 500 });
+    }
+
+    // Increment "Booked spots" in Notion Sessions DB
+    if (eventId) {
+      try {
+        const notion = new Client({ auth: process.env.NOTION_TOKEN });
+        const page = await notion.pages.retrieve({ page_id: eventId }) as { properties: Record<string, { type: string; number?: number | null }> };
+        const current = page.properties["Booked spots"]?.number ?? 0;
+        await notion.pages.update({
+          page_id: eventId,
+          properties: { "Booked spots": { number: current + 1 } },
+        });
+      } catch (err) {
+        console.error("Notion update error:", err);
+      }
     }
 
     // Send confirmation email
