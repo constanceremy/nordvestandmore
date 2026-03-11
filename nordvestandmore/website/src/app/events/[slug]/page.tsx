@@ -204,7 +204,7 @@ export default async function EventPage({
               eventTitle={event.title}
               price={event.price}
               currency={event.currency}
-              stripePriceId={event.stripePriceId}
+              stripeProductId={event.stripeProductId}
               soldOut={soldOut}
             />
 
