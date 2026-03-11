@@ -144,17 +144,25 @@ export async function getEvents(upcoming = true): Promise<EventItem[]> {
     ],
   };
 
-  const response = await notion.databases.query({
-    database_id: dbId,
-    filter: upcoming
-      ? { and: [filter!, deletedFilter, notDuplicateFilter, approvalFilter] }
-      : { and: [deletedFilter, notDuplicateFilter, approvalFilter] },
-    sorts: [{ property: "Start Date", direction: "ascending" }],
-  });
+  const queryFilter = upcoming
+    ? { and: [filter!, deletedFilter, notDuplicateFilter, approvalFilter] }
+    : { and: [deletedFilter, notDuplicateFilter, approvalFilter] };
 
-  return response.results
-    .filter((p): p is PageObjectResponse => p.object === "page")
-    .map((page) => {
+  const allResults: PageObjectResponse[] = [];
+  let cursor: string | undefined;
+  do {
+    const response = await notion.databases.query({
+      database_id: dbId,
+      filter: queryFilter,
+      sorts: [{ property: "Start Date", direction: "ascending" }],
+      page_size: 100,
+      ...(cursor ? { start_cursor: cursor } : {}),
+    });
+    allResults.push(...response.results.filter((p): p is PageObjectResponse => p.object === "page"));
+    cursor = response.has_more ? (response.next_cursor ?? undefined) : undefined;
+  } while (cursor);
+
+  return allResults.map((page) => {
       const p = page.properties;
       const title = getText(p["Event Name"]);
       // Combine Start Date (YYYY-MM-DD) + Start Time (7:30pm) → proper ISO
