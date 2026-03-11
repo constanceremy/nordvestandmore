@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
       ],
       success_url: `${origin}/booking/success?session_id={CHECKOUT_SESSION_ID}&event=${eventSlug}`,
       cancel_url: `${origin}/with-us/${eventSlug}`,
+      phone_number_collection: { enabled: true },
       metadata: { eventId, eventSlug, ...(eventDate ? { eventDate } : {}) },
     });
 

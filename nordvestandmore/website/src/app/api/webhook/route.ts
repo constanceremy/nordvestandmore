@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
       event_date: eventDate ?? null,
       name: session.customer_details?.name ?? "",
       email: session.customer_details?.email ?? "",
+      phone: session.customer_details?.phone ?? null,
       stripe_session_id: session.id,
       stripe_payment_intent: session.payment_intent as string,
       amount_paid: (session.amount_total ?? 0) / 100,
