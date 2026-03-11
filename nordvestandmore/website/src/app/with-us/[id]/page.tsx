@@ -205,6 +205,7 @@ export default async function SessionPage({
               eventId={session.id}
               eventSlug={session.id}
               eventTitle={exp.name}
+              eventDate={session.date}
               price={price}
               currency={exp.currency}
               stripeProductId={exp.stripeProductId}

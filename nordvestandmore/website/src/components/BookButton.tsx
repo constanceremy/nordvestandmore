@@ -7,6 +7,7 @@ type Props = {
   eventId: string;
   eventSlug: string;
   eventTitle: string;
+  eventDate?: string;
   price: number;
   currency: string;
   stripeProductId?: string;
@@ -17,6 +18,7 @@ export default function BookButton({
   eventId,
   eventSlug,
   eventTitle,
+  eventDate,
   price,
   currency,
   stripeProductId,
@@ -32,7 +34,7 @@ export default function BookButton({
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventId, eventSlug, eventTitle, price, currency, stripeProductId }),
+        body: JSON.stringify({ eventId, eventSlug, eventTitle, eventDate, price, currency, stripeProductId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong");

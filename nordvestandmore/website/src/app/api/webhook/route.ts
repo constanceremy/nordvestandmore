@@ -24,13 +24,14 @@ export async function POST(req: NextRequest) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
-    const { eventId, eventSlug } = session.metadata ?? {};
+    const { eventId, eventSlug, eventDate } = session.metadata ?? {};
     const supabase = getSupabase();
 
     // Save booking to Supabase
     const { error } = await supabase.from("bookings").insert({
       event_id: eventId,
       event_slug: eventSlug,
+      event_date: eventDate ?? null,
       name: session.customer_details?.name ?? "",
       email: session.customer_details?.email ?? "",
       stripe_session_id: session.id,
