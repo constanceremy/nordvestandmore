@@ -207,7 +207,7 @@ export default async function SessionPage({
               eventTitle={exp.name}
               price={price}
               currency={exp.currency}
-              stripePriceId={session.stripePriceId}
+              stripeProductId={exp.stripeProductId}
               soldOut={soldOut}
             />
 

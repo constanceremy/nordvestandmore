@@ -9,7 +9,7 @@ type Props = {
   eventTitle: string;
   price: number;
   currency: string;
-  stripePriceId?: string;
+  stripeProductId?: string;
   soldOut: boolean;
 };
 
@@ -19,7 +19,7 @@ export default function BookButton({
   eventTitle,
   price,
   currency,
-  stripePriceId,
+  stripeProductId,
   soldOut,
 }: Props) {
   const [loading, setLoading] = useState(false);
@@ -32,7 +32,7 @@ export default function BookButton({
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventId, eventSlug, eventTitle, price, currency, stripePriceId }),
+        body: JSON.stringify({ eventId, eventSlug, eventTitle, price, currency, stripeProductId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong");
