@@ -25,9 +25,11 @@ export async function generateMetadata({
 
 export const revalidate = 3600;
 
+export const dynamicParams = true;
+
 export async function generateStaticParams() {
   const events = await getEvents(false);
-  return events.map((e) => ({ slug: e.slug }));
+  return events.filter((e) => e.ownEvent).map((e) => ({ slug: e.slug }));
 }
 
 function formatDate(iso: string) {
