@@ -49,7 +49,7 @@ export default function Footer() {
             </li>
             <li>
               <a
-                href="https://facebook.com/nordvestandmore"
+                href="https://www.facebook.com/profile.php?id=61573178770564"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm hover:underline"
