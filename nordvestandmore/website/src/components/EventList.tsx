@@ -74,7 +74,7 @@ export default function EventList({ events }: { events: EventItem[] }) {
       if (eventDate < dateRange.from || eventDate > dateRange.to) return false;
     }
     return true;
-  });
+  }).sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
 
   if (filtered.length === 0) {
     return <p className="text-gray-400">No events match your filters.</p>;

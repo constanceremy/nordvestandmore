@@ -33,9 +33,10 @@ type LocationComboboxProps = {
   selected: string;
   onSelect: (loc: string) => void;
   className?: string;
+  placeholder?: string;
 };
 
-function LocationCombobox({ locations, selected, onSelect, className = "" }: LocationComboboxProps) {
+function LocationCombobox({ locations, selected, onSelect, className = "", placeholder = "Search location..." }: LocationComboboxProps) {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -60,7 +61,7 @@ function LocationCombobox({ locations, selected, onSelect, className = "" }: Loc
       <div className="flex items-center border border-black">
         <input
           type="text"
-          placeholder="Search location..."
+          placeholder={placeholder}
           value={open ? search : selected || ""}
           onChange={(e) => { setSearch(e.target.value); setOpen(true); }}
           onFocus={() => { setSearch(""); setOpen(true); }}
@@ -202,25 +203,17 @@ export default function EventFilters({ tags, locations }: Props) {
             </div>
           </div>
 
-          {/* Type */}
+          {/* Type — searchable combobox */}
           {tags.length > 0 && (
             <div>
               <p className="text-xs tracking-[0.25em] uppercase text-gray-400 mb-3">Type</p>
-              <div className="flex flex-wrap gap-2">
-                {tags.map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setParam({ tag: tag === t ? "" : t })}
-                    className={`text-xs tracking-[0.15em] uppercase px-4 py-2 border transition-colors ${
-                      tag === t
-                        ? "bg-black text-white border-black"
-                        : "border-black hover:bg-black hover:text-white"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
+              <LocationCombobox
+                locations={tags}
+                selected={tag}
+                onSelect={(t) => setParam({ tag: t })}
+                className="w-72"
+                placeholder="Search event type..."
+              />
             </div>
           )}
 
@@ -280,25 +273,16 @@ export default function EventFilters({ tags, locations }: Props) {
                 </div>
               </div>
 
-              {/* Type */}
+              {/* Type — searchable combobox */}
               {tags.length > 0 && (
                 <div>
                   <p className="text-xs tracking-[0.25em] uppercase text-gray-400 mb-3">Type</p>
-                  <div className="flex flex-wrap gap-2">
-                    {tags.map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => setParam({ tag: tag === t ? "" : t })}
-                        className={`text-xs tracking-[0.15em] uppercase px-4 py-2 border transition-colors ${
-                          tag === t
-                            ? "bg-black text-white border-black"
-                            : "border-black hover:bg-black hover:text-white"
-                        }`}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                  </div>
+                  <LocationCombobox
+                    locations={tags}
+                    selected={tag}
+                    onSelect={(t) => setParam({ tag: t })}
+                    placeholder="Search event type..."
+                  />
                 </div>
               )}
 
