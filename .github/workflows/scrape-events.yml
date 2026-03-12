@@ -57,6 +57,19 @@ jobs:
             python3 run_scraper.py all --auto
           fi
 
+      - name: Revalidate website cache
+        if: success()
+        env:
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+        run: |
+          if [ -n "$REVALIDATE_SECRET" ]; then
+            curl -s -X POST \
+              -H "x-revalidate-secret: $REVALIDATE_SECRET" \
+              "https://nordvestandmore.vercel.app/api/revalidate" \
+              && echo "✅ Website cache revalidated" \
+              || echo "⚠️ Revalidation request failed (non-blocking)"
+          fi
+
       - name: Post run summary
         if: always()
         run: |

@@ -55,6 +55,10 @@ export default function EventList({ events }: { events: EventItem[] }) {
   const period = searchParams.get("period") || "";
   const month = searchParams.get("month") || "";
 
+  // Always filter to today or future using the browser's real current date,
+  // so stale ISR cache never shows past events.
+  const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Copenhagen" });
+
   const dateRange = period
     ? getDateRangeForPeriod(period)
     : month
@@ -62,10 +66,11 @@ export default function EventList({ events }: { events: EventItem[] }) {
     : null;
 
   const filtered = events.filter((e) => {
+    const eventDate = e.date?.split("T")[0] ?? "";
+    if (eventDate && eventDate < todayStr) return false;
     if (tag && !e.tags.includes(tag)) return false;
     if (location && e.location !== location) return false;
     if (dateRange) {
-      const eventDate = e.date?.split("T")[0] ?? "";
       if (eventDate < dateRange.from || eventDate > dateRange.to) return false;
     }
     return true;
