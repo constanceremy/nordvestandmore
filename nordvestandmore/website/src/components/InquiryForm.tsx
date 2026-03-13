@@ -94,8 +94,8 @@ export default function InquiryForm({ experienceName, onClose }: Props) {
             </label>
 
             <div>
-              <label className="text-xs font-semibold tracking-widest uppercase text-gray-400 block mb-1">Tell us about your request</label>
-              <textarea value={form.notes} onChange={set("notes")} rows={4} placeholder="Tell us a bit about what you're interested in — any topics, areas of focus, group size, or anything else we should know" className="w-full border border-black px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-black placeholder:text-gray-300 resize-none" />
+              <label className="text-xs font-semibold tracking-widest uppercase text-gray-400 block mb-1">Tell us about your request *</label>
+              <textarea required value={form.notes} onChange={set("notes")} rows={4} placeholder="Tell us a bit about what you're interested in — any topics, areas of focus, group size, or anything else we should know" className="w-full border border-black px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-black placeholder:text-gray-300 resize-none" />
             </div>
 
             {error && <p className="text-red-500 text-sm">{error}</p>}
