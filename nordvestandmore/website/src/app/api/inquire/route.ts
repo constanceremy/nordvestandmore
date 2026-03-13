@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
           <p>Hi ${name},</p>
           <p>We've received your request for <strong>${experienceName}</strong> and will get back to you within a couple of days to confirm the details.</p>
           <p>If you have any questions in the meantime, reply to this email or write us at <a href="mailto:nordvestandmore@gmail.com">nordvestandmore@gmail.com</a>.</p>
+          <p style="font-size: 13px; color: #666;">You can read our <a href="https://nordvestandmore.com/terms">Terms of Sale</a> on our website.</p>
           <p style="margin-top: 32px;">See you soon,<br/>Constance<br/><br/><a href="https://www.instagram.com/nordvestandmore">@nordvestandmore</a><br/><a href="https://nordvestandmore.com">nordvestandmore.com</a></p>
         </div>
       `,
