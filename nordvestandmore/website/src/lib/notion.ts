@@ -227,6 +227,7 @@ export type Experience = {
   shortDescription: string;
   coverImage?: string;
   price: number;
+  priceLabel: string;
   currency: string;
   duration: string;
   meetingPoint: string;
@@ -239,6 +240,7 @@ export type Experience = {
   stripeProductId?: string;
   bookingPolicyId?: string;
   active: boolean;
+  privateOnRequest: boolean;
 };
 
 export type Session = {
@@ -307,6 +309,7 @@ export async function getExperiences(activeOnly = true): Promise<Experience[]> {
         shortDescription: getText(p["Short description"]),
         coverImage: getFiles(p["Cover image"]),
         price: getNumber(p["Price"]),
+        priceLabel: getText(p["Price label"]),
         currency: getText(p["Currency"]) || "DKK",
         duration: getText(p["Duration"]),
         meetingPoint: getText(p["Meeting point"]),
@@ -319,8 +322,14 @@ export async function getExperiences(activeOnly = true): Promise<Experience[]> {
         stripeProductId: getText(p["Stripe Product ID"]),
         bookingPolicyId: getRelationId(p["Booking policy"]),
         active: getCheckbox(p["Active"]),
+        privateOnRequest: getCheckbox(p["Private / On Request"]),
       };
     });
+}
+
+export async function getPrivateExperiences(): Promise<Experience[]> {
+  const all = await getExperiences(true);
+  return all.filter((e) => e.privateOnRequest);
 }
 
 export async function getSessions(upcomingOnly = true): Promise<Session[]> {

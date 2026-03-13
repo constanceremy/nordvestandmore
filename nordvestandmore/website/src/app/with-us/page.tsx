@@ -1,7 +1,8 @@
-import { getSessions } from "@/lib/notion";
+import { getSessions, getPrivateExperiences } from "@/lib/notion";
 import Link from "next/link";
 import { MapPin, ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
+import PrivateExperienceSection from "@/components/PrivateExperienceSection";
 
 export const metadata: Metadata = {
   title: "With Us | NV & more",
@@ -26,7 +27,10 @@ function formatDateShort(dateStr: string) {
 }
 
 export default async function WithUsPage() {
-  const sessions = await getSessions(true);
+  const [sessions, privateExperiences] = await Promise.all([
+    getSessions(true),
+    getPrivateExperiences(),
+  ]);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-16">
@@ -133,6 +137,8 @@ export default async function WithUsPage() {
           })}
         </div>
       )}
+
+      <PrivateExperienceSection experiences={privateExperiences} />
     </div>
   );
 }
