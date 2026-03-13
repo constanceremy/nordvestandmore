@@ -9,7 +9,7 @@ type Props = {
 };
 
 export default function InquiryForm({ experienceName, onClose }: Props) {
-  const [form, setForm] = useState({ name: "", email: "", dates: "", people: "", topics: "", notes: "" });
+  const [form, setForm] = useState({ name: "", email: "", dates: "", people: "", topics: "", notes: "", phone: "", canCall: false });
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
@@ -77,6 +77,21 @@ export default function InquiryForm({ experienceName, onClose }: Props) {
                 <input value={form.people} onChange={set("people")} placeholder="e.g. 4" className="w-full border border-black px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-black placeholder:text-gray-300" />
               </div>
             </div>
+
+            <div>
+              <label className="text-xs font-semibold tracking-widest uppercase text-gray-400 block mb-1">Phone number</label>
+              <input value={form.phone} onChange={set("phone")} type="tel" placeholder="e.g. +45 12 34 56 78" className="w-full border border-black px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-black placeholder:text-gray-300" />
+            </div>
+
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.canCall}
+                onChange={(e) => setForm((f) => ({ ...f, canCall: e.target.checked }))}
+                className="mt-0.5 shrink-0"
+              />
+              <span className="text-sm text-gray-500">You can call me to plan the details</span>
+            </label>
 
             <div>
               <label className="text-xs font-semibold tracking-widest uppercase text-gray-400 block mb-1">Tell us about your request</label>

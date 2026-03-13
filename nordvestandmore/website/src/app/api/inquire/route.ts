@@ -10,7 +10,7 @@ const transporter = nodemailer.createTransport({
 });
 
 export async function POST(req: NextRequest) {
-  const { experienceName, name, email, dates, people, topics, notes } = await req.json();
+  const { experienceName, name, email, dates, people, topics, notes, phone, canCall } = await req.json();
 
   if (!name || !email) {
     return NextResponse.json({ error: "Name and email are required" }, { status: 400 });
@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
             <tr><td style="padding: 8px 0; color: #666;">Email</td><td style="padding: 8px 0;"><a href="mailto:${email}">${email}</a></td></tr>
             <tr><td style="padding: 8px 0; color: #666;">Preferred dates</td><td style="padding: 8px 0;">${dates || "—"}</td></tr>
             <tr><td style="padding: 8px 0; color: #666;">Number of people</td><td style="padding: 8px 0;">${people || "—"}</td></tr>
+            <tr><td style="padding: 8px 0; color: #666;">Phone</td><td style="padding: 8px 0;">${phone || "—"}${phone && canCall ? " <strong>(ok to call)</strong>" : ""}</td></tr>
             <tr><td style="padding: 8px 0; color: #666;">Topics / focus</td><td style="padding: 8px 0;">${topics || "—"}</td></tr>
             <tr><td style="padding: 8px 0; color: #666;">Notes</td><td style="padding: 8px 0;">${notes || "—"}</td></tr>
           </table>
