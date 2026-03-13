@@ -64,23 +64,19 @@ export default async function WithUsPage() {
             const soldOut = maxSpots > 0 && spotsLeft <= 0;
             const { month, day, weekday } = formatDateShort(session.date);
 
-            return (
-              <Link
-                key={session.id}
-                href={`/with-us/${session.id}`}
-                className="group grid grid-cols-[80px_1fr_auto] md:grid-cols-[100px_1fr_200px_auto] items-center gap-6 py-8 hover:bg-black hover:text-white transition-colors px-2 -mx-2"
-              >
+            const sharedContent = (
+              <>
                 {/* Date */}
                 <div className="text-center">
-                  <p className="text-xs font-semibold tracking-widest uppercase text-gray-400 group-hover:text-gray-300">
+                  <p className={`text-xs font-semibold tracking-widest uppercase mb-0 ${soldOut ? "text-gray-300" : "text-gray-400 group-hover:text-gray-300"}`}>
                     {month}
                   </p>
                   <p className="text-4xl font-bold leading-none">{day}</p>
-                  <p className="text-xs text-gray-400 group-hover:text-gray-300 mt-0.5">
+                  <p className={`text-xs mt-0.5 ${soldOut ? "text-gray-300" : "text-gray-400 group-hover:text-gray-300"}`}>
                     {weekday}
                   </p>
                   {session.startTime && (
-                    <p className="text-xs text-gray-400 group-hover:text-gray-300 mt-0.5">
+                    <p className={`text-xs mt-0.5 ${soldOut ? "text-gray-300" : "text-gray-400 group-hover:text-gray-300"}`}>
                       {session.startTime}
                     </p>
                   )}
@@ -97,16 +93,16 @@ export default async function WithUsPage() {
                       ))}
                     </div>
                   )}
-                  <h2 className="text-xl md:text-2xl font-medium mt-1 leading-snug">
+                  <h2 className={`text-xl md:text-2xl font-medium mt-1 leading-snug ${soldOut ? "text-gray-400" : ""}`}>
                     {exp.name}
                   </h2>
                   {exp.shortDescription && (
-                    <p className="text-sm text-gray-500 group-hover:text-gray-300 mt-1 truncate">
+                    <p className={`text-sm mt-1 truncate ${soldOut ? "text-gray-300" : "text-gray-500 group-hover:text-gray-300"}`}>
                       {exp.shortDescription}
                     </p>
                   )}
                   {exp.location && (
-                    <p className="flex items-center gap-1 mt-2 text-sm text-gray-500 group-hover:text-gray-300">
+                    <p className={`flex items-center gap-1 mt-2 text-sm ${soldOut ? "text-gray-300" : "text-gray-500 group-hover:text-gray-300"}`}>
                       <MapPin size={12} />
                       {exp.location}
                     </p>
@@ -116,13 +112,13 @@ export default async function WithUsPage() {
                 {/* Price + spots */}
                 <div className="hidden md:block text-right">
                   {price > 0 ? (
-                    <p className="text-xl font-bold">{price} {exp.currency}</p>
+                    <p className={`text-xl font-bold ${soldOut ? "text-gray-300" : ""}`}>{price} {exp.currency}</p>
                   ) : (
-                    <p className="text-sm font-semibold tracking-widest uppercase">Free</p>
+                    <p className={`text-sm font-semibold tracking-widest uppercase ${soldOut ? "text-gray-300" : ""}`}>Free</p>
                   )}
                   {maxSpots > 0 && (
                     <p className={`text-xs mt-1 ${
-                      soldOut ? "text-red-500 group-hover:text-red-300"
+                      soldOut ? "text-red-400"
                       : spotsLeft <= 5 ? "text-amber-500 group-hover:text-amber-300"
                       : "text-gray-400 group-hover:text-gray-300"
                     }`}>
@@ -131,7 +127,27 @@ export default async function WithUsPage() {
                   )}
                 </div>
 
-                <ArrowRight size={16} className="flex-shrink-0" />
+                {soldOut
+                  ? <span className="text-xs font-semibold tracking-widest uppercase text-gray-300">Sold out</span>
+                  : <ArrowRight size={16} className="flex-shrink-0" />
+                }
+              </>
+            );
+
+            return soldOut ? (
+              <div
+                key={session.id}
+                className="grid grid-cols-[80px_1fr_auto] md:grid-cols-[100px_1fr_200px_auto] items-center gap-6 py-8 px-2 -mx-2 opacity-50"
+              >
+                {sharedContent}
+              </div>
+            ) : (
+              <Link
+                key={session.id}
+                href={`/with-us/${session.id}`}
+                className="group grid grid-cols-[80px_1fr_auto] md:grid-cols-[100px_1fr_200px_auto] items-center gap-6 py-8 hover:bg-black hover:text-white transition-colors px-2 -mx-2"
+              >
+                {sharedContent}
               </Link>
             );
           })}
