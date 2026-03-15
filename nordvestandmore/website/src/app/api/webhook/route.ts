@@ -81,6 +81,17 @@ export async function POST(req: NextRequest) {
     const amount = (session.amount_total ?? 0) / 100;
     const currency = session.currency?.toUpperCase() ?? "DKK";
 
+    // Deduplicate — skip if this Stripe session was already processed
+    const { data: existing } = await supabase
+      .from("bookings")
+      .select("id")
+      .eq("stripe_session_id", session.id)
+      .maybeSingle();
+    if (existing) {
+      console.log("Duplicate webhook event, skipping:", session.id);
+      return NextResponse.json({ received: true });
+    }
+
     // Save booking to Supabase
     const { error } = await supabase.from("bookings").insert({
       event_id: eventId,
