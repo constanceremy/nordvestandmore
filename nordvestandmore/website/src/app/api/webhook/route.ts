@@ -108,8 +108,12 @@ export async function POST(req: NextRequest) {
     });
 
     if (error) {
+      if (error.code === "23505") {
+        // Unique constraint violation — already processed, skip silently
+        console.log("Duplicate booking skipped:", session.id);
+        return NextResponse.json({ received: true });
+      }
       console.error("Supabase insert error:", error);
-      // Don't return 500 — Stripe would retry endlessly. Log and continue.
     }
 
     // Increment "Booked spots" in Notion Sessions DB
