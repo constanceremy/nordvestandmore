@@ -30,16 +30,17 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: 'Neue Haas Grotesk Display Pro', Helvetica, sans-serif;
-  font-weight: 400;
+  font-weight: 300;
+  letter-spacing: 0.03em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 h1, h2, h3, h4 {
   font-family: 'Neue Haas Grotesk Display Pro', Helvetica, sans-serif;
-  font-weight: 200;
+  font-weight: 300;
   line-height: 1.05;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.03em;
 }
 
 /* Scrollbar */
