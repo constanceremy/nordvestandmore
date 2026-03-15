@@ -166,6 +166,17 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       console.error("Notification email error:", err);
     }
+
+    // Revalidate website cache so spots/sold-out status updates immediately
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://nordvestandmore.vercel.app";
+      await fetch(`${baseUrl}/api/revalidate`, {
+        method: "POST",
+        headers: { "x-revalidate-secret": process.env.REVALIDATE_SECRET ?? "" },
+      });
+    } catch (err) {
+      console.error("Revalidation error:", err);
+    }
   }
 
   return NextResponse.json({ received: true });
