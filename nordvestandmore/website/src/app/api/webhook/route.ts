@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
-    const { eventId, eventSlug, eventDate } = session.metadata ?? {};
+    const { eventId, eventSlug, eventTitle, eventDate } = session.metadata ?? {};
     const supabase = getSupabase();
     const name = session.customer_details?.name ?? "";
     const email = session.customer_details?.email ?? "";
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
         from: `"NV & more" <${process.env.GMAIL_USER}>`,
         to: process.env.GMAIL_USER,
         replyTo: email,
-        subject: `New booking — ${session.metadata?.eventSlug ?? "event"}`,
+        subject: `New booking — ${eventTitle ?? eventSlug ?? "event"}${eventDate ? ` — ${eventDate}` : ""}`,
         html: `
           <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #111;">
             <h2 style="font-size: 20px; margin-bottom: 16px;">New booking</h2>
@@ -138,7 +138,8 @@ export async function POST(req: NextRequest) {
               <tr><td style="padding: 8px 0; color: #666; width: 140px;">Name</td><td style="padding: 8px 0;">${name}</td></tr>
               <tr><td style="padding: 8px 0; color: #666;">Email</td><td style="padding: 8px 0;"><a href="mailto:${email}">${email}</a></td></tr>
               <tr><td style="padding: 8px 0; color: #666;">Phone</td><td style="padding: 8px 0;">${session.customer_details?.phone ?? "—"}</td></tr>
-              <tr><td style="padding: 8px 0; color: #666;">Event</td><td style="padding: 8px 0;">${session.metadata?.eventSlug ?? "—"}</td></tr>
+              <tr><td style="padding: 8px 0; color: #666;">Event</td><td style="padding: 8px 0;"><strong>${eventTitle ?? "—"}</strong></td></tr>
+              <tr><td style="padding: 8px 0; color: #666;">Session ID</td><td style="padding: 8px 0;">${eventSlug ?? "—"}</td></tr>
               <tr><td style="padding: 8px 0; color: #666;">Date</td><td style="padding: 8px 0;">${eventDate ?? "—"}</td></tr>
               <tr><td style="padding: 8px 0; color: #666;">Amount paid</td><td style="padding: 8px 0;">${amount} ${currency}</td></tr>
             </table>
