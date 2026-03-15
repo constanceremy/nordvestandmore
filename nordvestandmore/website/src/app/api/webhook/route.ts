@@ -48,7 +48,8 @@ async function sendConfirmationEmail({
         <p>Your booking is confirmed. We look forward to seeing you${dateLabel ? ` on <strong>${dateLabel}</strong>` : ""}.</p>
         ${amount > 0 ? `<p>Amount paid: <strong>${amount} ${currency}</strong></p>` : ""}
         <p>If you have any questions, reply to this email or write us at <a href="mailto:nordvestandmore@gmail.com">nordvestandmore@gmail.com</a>.</p>
-        <p style="margin-top: 32px;">See you soon,<br/>Constance<br/>NV & more</p>
+        <p style="font-size: 13px; color: #666;">You can read our <a href="https://nordvestandmore.com/terms">Terms of Sale</a> on our website.</p>
+        <p style="margin-top: 32px;">See you soon,<br/>Constance<br/><br/><a href="https://www.instagram.com/nordvestandmore">@nordvestandmore</a><br/><a href="https://nordvestandmore.com">nordvestandmore.com</a></p>
       </div>
     `,
   });
