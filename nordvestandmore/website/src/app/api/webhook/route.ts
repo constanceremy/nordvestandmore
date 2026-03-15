@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error("Supabase insert error:", error);
-      return NextResponse.json({ error: "DB error" }, { status: 500 });
+      // Don't return 500 — Stripe would retry endlessly. Log and continue.
     }
 
     // Increment "Booked spots" in Notion Sessions DB
