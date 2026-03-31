@@ -48,10 +48,15 @@ jobs:
       - name: Install Python dependencies
         run: |
           cd nordvestandmore/scraper
-          if [ -d ../venv ]; then
-            source ../venv/bin/activate
+          # Use the persistent nv_scraper venv if available (already has all deps)
+          if [ -f nv_scraper/.venv/bin/activate ]; then
+            echo "✅ Using existing nv_scraper/.venv"
+          else
+            echo "🔧 Creating venv at nv_scraper/.venv"
+            python3 -m venv nv_scraper/.venv
+            source nv_scraper/.venv/bin/activate
+            pip install -r requirements.txt
           fi
-          pip3 install -r requirements.txt
 
       # ── Ensure IG session is available ──
       - name: Restore IG session
@@ -94,6 +99,9 @@ jobs:
           if [ -f ../../venv/bin/activate ]; then
             source ../../venv/bin/activate
           fi
+
+          # Activate the persistent venv
+          source ../nv_scraper/.venv/bin/activate
 
           # caffeinate -i prevents the Mac from sleeping during the scrape
           if [ -n "${{ inputs.accounts }}" ]; then
