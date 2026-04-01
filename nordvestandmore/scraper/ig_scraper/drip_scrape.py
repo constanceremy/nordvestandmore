@@ -468,11 +468,12 @@ def run_scrape(batch_size: int, force: bool = False):
         print(f"⏩ Randomly skipping this slot ({int(SKIP_PROB * 100)}% skip rate for organic timing)")
         return
 
-    # ── Random startup delay: 0–5 minutes ──
-    # Spreads actual scrape start times across the 30-min window so
-    # Instagram doesn't see perfectly regular 30-min intervals.
+    # ── Random startup delay: 0–1 minute ──
+    # Spreads actual scrape start times so Instagram doesn't see perfectly
+    # regular intervals. Capped at 60s (was 300s) to avoid eating into the
+    # 25-min job timeout and causing concurrency cancellations.
     if not force:
-        startup_delay = random.uniform(0, 300)  # 0–5 min
+        startup_delay = random.uniform(0, 60)  # 0–1 min
         print(f"⏱️  Startup delay: {startup_delay:.0f}s (randomised)…")
         time.sleep(startup_delay)
 
