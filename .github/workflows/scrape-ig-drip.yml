@@ -103,11 +103,11 @@ jobs:
           # Activate the persistent venv
           source ../nv_scraper/.venv/bin/activate
 
-          # caffeinate -i prevents the Mac from sleeping during the scrape
+          # caffeinate -dims prevents the Mac from sleeping during the scrape
           if [ -n "${{ inputs.accounts }}" ]; then
             echo "📸 Manual mode: scraping specific accounts"
             # Use provided days_back (default 20) for manual runs so older posts aren't missed
-            DAYS_BACK="${{ inputs.days_back || '20' }}" caffeinate -i python3 scrape_instagram_events.py ${{ inputs.accounts }}
+            DAYS_BACK="${{ inputs.days_back || '20' }}" caffeinate -dims python3 scrape_instagram_events.py ${{ inputs.accounts }}
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # Manual drip run — bypass random skip/delay
             BATCH_SIZE="${{ inputs.batch_size || '3' }}"
@@ -115,10 +115,10 @@ jobs:
             if [ "${{ inputs.force_refresh_session }}" = "true" ]; then
               python3 -c "import json,pathlib; f=pathlib.Path('$IG_STATE_FILE'); d=json.loads(f.read_text()) if f.exists() else {}; d.update({'suspended':False,'auth_failure_streak':0}); f.parent.mkdir(parents=True,exist_ok=True); f.write_text(json.dumps(d,indent=2)); print('🔓 Scraper unsuspended')"
             fi
-            caffeinate -i python3 drip_scrape.py --batch-size "$BATCH_SIZE" --force
+            caffeinate -dims python3 drip_scrape.py --batch-size "$BATCH_SIZE" --force
           else
             # Scheduled run — use random skip + delay for organic timing
-            caffeinate -i python3 drip_scrape.py --batch-size 3
+            caffeinate -dims python3 drip_scrape.py --batch-size 3
           fi
 
       # ── Failure notification ──
