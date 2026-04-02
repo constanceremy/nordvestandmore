@@ -130,6 +130,21 @@ def process_queue(L, client, existing, all_entries, source_mapping, tmp_dir):
 
         print(f"  Found {len(events)} event(s)")
 
+        # Always overwrite the stub with the first event's data from Gemini.
+        # We do this unconditionally — even if the event is already in Notion
+        # via a different entry (dedup case), the stub's title/fields should
+        # reflect what Gemini extracted, not the raw Instagram caption.
+        # We patch just the title here; scrape_account fills the rest.
+        first_name = events[0].get("event_name") or ""
+        if first_name:
+            requests.patch(
+                f"{ig.NOTION_API}/pages/{page_id}",
+                headers=ig.NOTION_HEADERS,
+                json={"properties": {"Event Name": {"title": [{"text": {"content": first_name}}]}}},
+                timeout=30,
+            )
+            print(f"  ✏️  Set stub title: {first_name}")
+
         # Monkey-patch get_recent_posts to process only this post
         def _just_this_post(L_, acct_, days_, **kwargs):
             _just_this_post._last_total_count = 1
@@ -139,14 +154,15 @@ def process_queue(L, client, existing, all_entries, source_mapping, tmp_dir):
         original_get = ig.get_recent_posts
         ig.get_recent_posts = _just_this_post
 
-        # Intercept first notion_create → update stub in place
+        # Intercept first notion_create → update stub in place instead of
+        # creating a new entry. This handles new events (not yet in Notion).
         first_done = [False]
         original_create = ig.notion_create
 
         def _update_stub_first(ev: dict):
             if not first_done[0]:
                 first_done[0] = True
-                print(f"  ✏️  Filling stub: {ev.get('event_name')} | {ev.get('start_date')}")
+                print(f"  ✏️  Filling stub fields: {ev.get('event_name')} | {ev.get('start_date')}")
                 ig.notion_update(page_id, ev)
                 key = ig.make_dedup_key(ev)
                 existing[key] = page_id
