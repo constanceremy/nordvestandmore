@@ -561,6 +561,14 @@ def run_scrape(batch_size: int, force: bool = False):
     tmp_dir = tempfile.mkdtemp(prefix="ig_drip_")
     results: dict[str, dict] = {}
 
+    # ── Process manually queued IG posts first ──
+    # Entries created by Constance in Notion with an IG URL + Scraped=false
+    try:
+        import scrape_ig_queue as queue_mod
+        queue_mod.process_queue(L, client, existing, all_entries, source_mapping, tmp_dir)
+    except Exception as e:
+        print(f"⚠️  Queue processing failed (non-fatal): {e}")
+
     try:
         for i, account in enumerate(batch, 1):
             print(f"\n[{i}/{len(batch)}] Scraping @{account}...")
