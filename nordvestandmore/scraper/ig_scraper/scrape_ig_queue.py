@@ -194,15 +194,12 @@ def process_queue(L, client, existing, all_entries, source_mapping, tmp_dir):
             # Stub was filled in — mark as scraped
             mark_scraped(page_id)
         else:
-            # notion_create was never called = event already existed in Notion
-            # Archive the stub to avoid a duplicate entry
-            print(f"  🗑️  Event already in Notion — archiving stub")
-            requests.patch(
-                f"{ig.NOTION_API}/pages/{page_id}",
-                headers=ig.NOTION_HEADERS,
-                json={"archived": True},
-                timeout=30,
-            )
+            # notion_create was never called = event already existed in Notion via dedup.
+            # Fill the stub in place with the first event's data so the row is complete,
+            # then mark scraped. No new row is created.
+            print(f"  ✏️  Event already in Notion — filling stub in place and marking done")
+            ig.notion_update(page_id, events[0])
+            mark_scraped(page_id)
 
     print()
 
