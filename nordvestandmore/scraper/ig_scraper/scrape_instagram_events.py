@@ -456,7 +456,7 @@ Rules:
         return result.get("events", [])
     except Exception as e:
         log(f"  Gemini analysis failed: {e}")
-        return []
+        return None  # None = API error (retry); [] = genuinely no events
 
 
 def to_12h(time_24: str) -> str | None:

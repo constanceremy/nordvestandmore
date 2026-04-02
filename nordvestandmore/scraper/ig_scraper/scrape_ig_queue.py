@@ -123,6 +123,11 @@ def process_queue(L, client, existing, all_entries, source_mapping, tmp_dir):
             post_date=post.date_utc.date()
         )
 
+        if events is None:
+            # Gemini API failure (503 etc) — leave unscraped so next run retries
+            print(f"  ⚠️  Gemini failed — will retry next run")
+            continue
+
         if not events:
             print(f"  ℹ️  No events found — marking done")
             mark_scraped(page_id)
