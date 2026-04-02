@@ -171,7 +171,12 @@ def process_queue(L, client, existing, all_entries, source_mapping, tmp_dir):
                 ig.notion_update(page_id, ev)
                 key = ig.make_dedup_key(ev)
                 existing[key] = page_id
-                return type("R", (), {"status_code": 200})()
+                # Return a mock response that satisfies raise_for_status() and .json()
+                class _FakeResp:
+                    status_code = 200
+                    def raise_for_status(self): pass
+                    def json(self): return {"id": page_id}
+                return _FakeResp()
             return original_create(ev)
 
         ig.notion_create = _update_stub_first
@@ -185,7 +190,19 @@ def process_queue(L, client, existing, all_entries, source_mapping, tmp_dir):
             ig.get_recent_posts = original_get
             ig.notion_create = original_create
 
-        mark_scraped(page_id)
+        if first_done[0]:
+            # Stub was filled in — mark as scraped
+            mark_scraped(page_id)
+        else:
+            # notion_create was never called = event already existed in Notion
+            # Archive the stub to avoid a duplicate entry
+            print(f"  🗑️  Event already in Notion — archiving stub")
+            requests.patch(
+                f"{ig.NOTION_API}/pages/{page_id}",
+                headers=ig.NOTION_HEADERS,
+                json={"archived": True},
+                timeout=30,
+            )
 
     print()
 
