@@ -21,6 +21,7 @@ import hashlib
 import json
 import os
 import random
+import signal
 import sys
 import time
 from datetime import datetime, timezone
@@ -570,13 +571,49 @@ def run_scrape(batch_size: int, force: bool = False):
         print(f"⚠️  Queue processing failed (non-fatal): {e}")
 
     try:
+        # Per-account timeout: skip accounts that hang for more than 4 minutes
+        ACCOUNT_TIMEOUT = 240
+
+        def _notify_timeout(acct):
+            topic = os.environ.get("NTFY_TOPIC", "")
+            if not topic:
+                return
+            try:
+                import requests as _req
+                _req.post(
+                    f"https://ntfy.sh/{topic}",
+                    data=f"@{acct} timed out after {ACCOUNT_TIMEOUT}s and was skipped".encode(),
+                    headers={"Title": "IG Scraper: account timeout", "Tags": "warning", "Priority": "default"},
+                    timeout=10,
+                )
+            except Exception:
+                pass
+
+        def _scrape_with_timeout(acct):
+            def _handler(signum, frame):
+                raise TimeoutError(f"@{acct} timed out after {ACCOUNT_TIMEOUT}s")
+            old = signal.signal(signal.SIGALRM, _handler)
+            signal.alarm(ACCOUNT_TIMEOUT)
+            try:
+                return ig_mod.scrape_account(
+                    acct, L, client, existing, all_entries,
+                    source_mapping, tmp_dir, auto_login_retry=False,
+                )
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old)
+
         for i, account in enumerate(batch, 1):
             print(f"\n[{i}/{len(batch)}] Scraping @{account}...")
             t0 = time.time()
-            stats = ig_mod.scrape_account(
-                account, L, client, existing, all_entries,
-                source_mapping, tmp_dir, auto_login_retry=False,
-            )
+            try:
+                stats = _scrape_with_timeout(account)
+            except TimeoutError as e:
+                print(f"  ⏱️  {e} — skipping")
+                _notify_timeout(account)
+                duration = time.time() - t0
+                results[account] = {"error": "timeout", "duration": duration}
+                continue
             duration = time.time() - t0
 
             posts = stats.get("total_posts", 0)
@@ -591,10 +628,13 @@ def run_scrape(batch_size: int, force: bool = False):
                 print(f"  🔄 0/{profile_total} posts — retrying in 30s...")
                 time_in_retries += 30
                 time.sleep(30)
-                stats = ig_mod.scrape_account(
-                    account, L, client, existing, all_entries,
-                    source_mapping, tmp_dir, auto_login_retry=False,
-                )
+                try:
+                    stats = _scrape_with_timeout(account)
+                except TimeoutError as e:
+                    print(f"  ⏱️  {e} — skipping")
+                    _notify_timeout(account)
+                    results[account] = {"error": "timeout", "duration": time.time() - t0}
+                    continue
                 duration = time.time() - t0
                 posts = stats.get("total_posts", 0)
                 evts = stats.get("total_events", 0)
