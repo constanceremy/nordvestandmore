@@ -1,6 +1,7 @@
 import { getSessionById, getSessions } from "@/lib/notion";
 import { notFound } from "next/navigation";
 import BookButton from "@/components/BookButton";
+import AddToCalendar from "@/components/AddToCalendar";
 import Link from "next/link";
 import { ArrowLeft, Calendar, MapPin, Users, Clock, Globe } from "lucide-react";
 import type { Metadata } from "next";
@@ -215,6 +216,17 @@ export default async function SessionPage({
             <p className="text-xs text-gray-400 mt-3 text-center">
               Secure payment via Stripe. You'll receive a confirmation email.
             </p>
+          </div>
+
+          <div className="mt-4">
+            <AddToCalendar
+              title={exp.name}
+              date={session.date}
+              startTime={session.startTime}
+              endTime={session.endTime}
+              location={exp.meetingPoint}
+              description={exp.shortDescription || exp.description}
+            />
           </div>
 
           {/* Booking policy */}

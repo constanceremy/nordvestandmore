@@ -1,6 +1,7 @@
 import { getEventBySlug, getEvents } from "@/lib/notion";
 import { notFound } from "next/navigation";
 import BookButton from "@/components/BookButton";
+import AddToCalendar from "@/components/AddToCalendar";
 import { Calendar, MapPin, Users, RefreshCw, User, Instagram } from "lucide-react";
 import type { Metadata } from "next";
 
@@ -211,6 +212,15 @@ export default async function EventPage({
             <p className="text-xs text-gray-400 mt-3 text-center">
               Secure payment via Stripe. You'll receive a confirmation email.
             </p>
+          </div>
+
+          <div className="mt-4">
+            <AddToCalendar
+              title={event.title}
+              date={event.date}
+              location={event.location}
+              description={event.description}
+            />
           </div>
         </div>
       </div>
