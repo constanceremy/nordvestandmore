@@ -87,15 +87,6 @@ export default async function BlogPostPage({
         )}
       </header>
 
-      {post.coverImage && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={post.coverImage}
-          alt={post.title}
-          className="w-full aspect-[16/9] object-cover grayscale mb-12 border border-black"
-        />
-      )}
-
       {/* Body */}
       <div className="prose prose-lg max-w-none">
         <NotionBlocks blocks={blocks} />

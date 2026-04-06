@@ -52,14 +52,6 @@ export default async function BlogPage() {
                 i === 0 ? "md:col-span-2" : ""
               }`}
             >
-              {post.coverImage && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={post.coverImage}
-                  alt={post.title}
-                  className={`w-full object-cover grayscale mb-6 ${i === 0 ? "h-64 md:h-96" : "h-48"}`}
-                />
-              )}
               <div className="flex items-center gap-4 mb-3">
                 <p className="text-xs text-gray-400 group-hover:text-gray-300">
                   {formatDate(post.publishedDate)}

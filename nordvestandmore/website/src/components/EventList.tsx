@@ -32,6 +32,7 @@ function getDateRangeForPeriod(period: string): { from: string; to: string } | n
 
 function formatTime(dateStr: string) {
   if (!dateStr) return "";
+  if (!dateStr.includes("T")) return "All day";
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return "";
   return d.toLocaleTimeString("en-DK", { hour: "2-digit", minute: "2-digit" });

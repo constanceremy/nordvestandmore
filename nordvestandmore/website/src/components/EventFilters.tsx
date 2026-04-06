@@ -4,6 +4,12 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback, useState, useRef, useEffect } from "react";
 import { SlidersHorizontal, X, ChevronDown } from "lucide-react";
 
+const OCCASION_TAGS = new Set([
+  "Christmas", "Julefrokost", "Nytår", "Fastelavn", "Easter", "Mortensaften",
+  "Sankt Hans", "Grundlovsdag", "Ramadan", "Eid", "Diwali", "Chinese New Year",
+  "Pride", "International Women's Day", "Black History Month", "Summer",
+]);
+
 type Props = {
   tags: string[];
   locations: string[];
@@ -128,6 +134,9 @@ export default function EventFilters({ tags, locations }: Props) {
   const hasFilters = !!(tag || location || period || month);
   const months = getUpcomingMonths();
 
+  const typeTags = tags.filter((t) => !OCCASION_TAGS.has(t));
+  const occasionTags = tags.filter((t) => OCCASION_TAGS.has(t));
+
   const whenSelectValue = period ? `period:${period}` : month ? `month:${month}` : "";
 
   const handleWhenSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -204,16 +213,38 @@ export default function EventFilters({ tags, locations }: Props) {
           </div>
 
           {/* Type — searchable combobox */}
-          {tags.length > 0 && (
+          {typeTags.length > 0 && (
             <div>
               <p className="text-xs tracking-[0.25em] uppercase text-gray-400 mb-3">Type</p>
               <LocationCombobox
-                locations={tags}
-                selected={tag}
+                locations={typeTags}
+                selected={OCCASION_TAGS.has(tag) ? "" : tag}
                 onSelect={(t) => setParam({ tag: t })}
                 className="w-72"
                 placeholder="Search event type..."
               />
+            </div>
+          )}
+
+          {/* Occasion — pills for seasonal/cultural tags */}
+          {occasionTags.length > 0 && (
+            <div>
+              <p className="text-xs tracking-[0.25em] uppercase text-gray-400 mb-3">Occasion</p>
+              <div className="flex flex-wrap gap-2">
+                {occasionTags.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setParam({ tag: tag === t ? "" : t })}
+                    className={`text-xs tracking-[0.15em] uppercase px-4 py-2 border transition-colors ${
+                      tag === t
+                        ? "bg-black text-white border-black"
+                        : "border-black hover:bg-black hover:text-white"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -274,15 +305,37 @@ export default function EventFilters({ tags, locations }: Props) {
               </div>
 
               {/* Type — searchable combobox */}
-              {tags.length > 0 && (
+              {typeTags.length > 0 && (
                 <div>
                   <p className="text-xs tracking-[0.25em] uppercase text-gray-400 mb-3">Type</p>
                   <LocationCombobox
-                    locations={tags}
-                    selected={tag}
+                    locations={typeTags}
+                    selected={OCCASION_TAGS.has(tag) ? "" : tag}
                     onSelect={(t) => setParam({ tag: t })}
                     placeholder="Search event type..."
                   />
+                </div>
+              )}
+
+              {/* Occasion — pills for seasonal/cultural tags */}
+              {occasionTags.length > 0 && (
+                <div>
+                  <p className="text-xs tracking-[0.25em] uppercase text-gray-400 mb-3">Occasion</p>
+                  <div className="flex flex-wrap gap-2">
+                    {occasionTags.map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setParam({ tag: tag === t ? "" : t })}
+                        className={`text-xs tracking-[0.15em] uppercase px-4 py-2 border transition-colors ${
+                          tag === t
+                            ? "bg-black text-white border-black"
+                            : "border-black hover:bg-black hover:text-white"
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 

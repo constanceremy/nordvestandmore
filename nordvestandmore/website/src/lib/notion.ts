@@ -344,6 +344,7 @@ export async function getSessions(upcomingOnly = true): Promise<Session[]> {
           and: [
             { property: "Date", date: { on_or_after: today } },
             { property: "Status", select: { does_not_equal: "Cancelled" } },
+            { property: "Hidden", checkbox: { equals: false } },
           ],
         }
       : undefined,
@@ -429,7 +430,8 @@ export async function getBlogPosts(): Promise<BlogPost[]> {
         author: getText(p["Author"]) || "NV & more",
         notionUrl: page.url,
       };
-    });
+    })
+    .sort((a, b) => b.publishedDate.localeCompare(a.publishedDate));
 }
 
 export async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> {

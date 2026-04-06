@@ -78,25 +78,8 @@ export default function NotionBlocks({ blocks }: { blocks: Block[] }) {
           case "divider":
             return <hr key={b.id} className="border-black my-8" />;
 
-          case "image": {
-            const url =
-              b.image.type === "external"
-                ? b.image.external.url
-                : b.image.file.url;
-            const caption =
-              b.image.caption?.map((c) => c.plain_text).join("") || "";
-            return (
-              <figure key={b.id} className="my-8">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt={caption} className="w-full grayscale border border-black" />
-                {caption && (
-                  <figcaption className="text-xs text-gray-400 text-center mt-2">
-                    {caption}
-                  </figcaption>
-                )}
-              </figure>
-            );
-          }
+          case "image":
+            return null;
 
           case "code":
             return (
