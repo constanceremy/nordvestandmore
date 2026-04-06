@@ -68,7 +68,9 @@ export default async function BlogPostPage({
         <div className="flex flex-wrap items-center gap-4 mb-4 text-xs font-semibold tracking-widest uppercase text-gray-400">
           <span>{formatDate(post.publishedDate)}</span>
           {post.tags.map((tag) => (
-            <span key={tag}>{tag}</span>
+            <Link key={tag} href={`/blog?tag=${encodeURIComponent(tag)}`} className="hover:underline underline-offset-4">
+              {tag}
+            </Link>
           ))}
           <span>By {post.author}</span>
         </div>
