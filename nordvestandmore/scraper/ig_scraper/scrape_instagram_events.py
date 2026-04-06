@@ -617,8 +617,8 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             "rich_text": [{"text": {"content": ev["end_time_disp"]}}]
         }
 
-    # Location — only set on create, preserve manual edits on update
-    if ev.get("location") and not is_update:
+    # Location — set on create, or on update if the existing entry had no location
+    if ev.get("location") and (not is_update or ev.get("set_location_on_update")):
         props["Location"] = {
             "rich_text": [{"text": {"content": ev["location"][:2000]}}]
         }
@@ -1027,9 +1027,12 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                         incoming_desc = ev.get("description") or ""
                         if incoming_desc and len(incoming_desc) > max(len(existing_desc), 50):
                             ev["description_is_richer"] = True
-                # Set tag if the existing entry has no tag yet (e.g. created before auto-tag was live)
-                if ev.get("tag") and existing_entry and not existing_entry.get("tag"):
-                    ev["set_tag_on_update"] = True
+                # Set tag/location if the existing entry is missing them
+                if existing_entry:
+                    if ev.get("tag") and not existing_entry.get("tag"):
+                        ev["set_tag_on_update"] = True
+                    if ev.get("location") and not existing_entry.get("location"):
+                        ev["set_location_on_update"] = True
                 r = notion_update(page_id, ev, merge_only=merge_only)
                 if r.status_code == 429:
                     time.sleep(1.5)
