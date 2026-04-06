@@ -36,6 +36,7 @@ function formatDate(iso: string) {
 
 const TABS = ["Events", "Blog"] as const;
 type Tab = (typeof TABS)[number];
+const PAGE_SIZE = 10;
 
 function SearchResults() {
   const searchParams = useSearchParams();
@@ -45,6 +46,7 @@ function SearchResults() {
 
   const [index, setIndex] = useState<SearchItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [visible, setVisible] = useState(PAGE_SIZE);
 
   useEffect(() => {
     fetch("/api/search")
@@ -52,6 +54,9 @@ function SearchResults() {
       .then((data) => { setIndex(data); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  // Reset pagination when query or tab changes
+  useEffect(() => { setVisible(PAGE_SIZE); }, [query, tab]);
 
   const { events, blog } = useMemo(() => {
     if (!query || query.length < 2) return { events: [], blog: [] };
@@ -114,35 +119,45 @@ function SearchResults() {
           {results.length === 0 ? (
             <p className="text-gray-400">No {tab === "Events" ? "events" : "articles"} found for &ldquo;{query}&rdquo;.</p>
           ) : (
-            <div className="divide-y divide-black border-t border-black">
-              {results.map((item, i) => (
-                <Link
-                  key={i}
-                  href={item.url}
-                  target={item.external ? "_blank" : undefined}
-                  rel={item.external ? "noopener noreferrer" : undefined}
-                  className="flex flex-col md:flex-row md:items-start gap-2 md:gap-8 py-5 hover:opacity-60 transition-opacity"
+            <>
+              <div className="divide-y divide-black border-t border-black">
+                {results.slice(0, visible).map((item, i) => (
+                  <Link
+                    key={i}
+                    href={item.url}
+                    target={item.external ? "_blank" : undefined}
+                    rel={item.external ? "noopener noreferrer" : undefined}
+                    className="flex flex-col md:flex-row md:items-start gap-2 md:gap-8 py-5 hover:opacity-60 transition-opacity"
+                  >
+                    <div className="md:w-32 shrink-0 text-xs text-gray-400 pt-0.5">
+                      {formatDate(item.date)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium leading-snug">{item.title}</p>
+                      {item.location && (
+                        <p className="text-xs text-gray-400 mt-0.5">{item.location}</p>
+                      )}
+                      {item.type === "blog" && item.description && (
+                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{item.description}</p>
+                      )}
+                    </div>
+                    {item.type === "own-event" && (
+                      <span className="text-xs tracking-widest uppercase border border-black px-2 py-0.5 self-start shrink-0">
+                        NV & more
+                      </span>
+                    )}
+                  </Link>
+                ))}
+              </div>
+              {visible < results.length && (
+                <button
+                  onClick={() => setVisible((v) => v + PAGE_SIZE)}
+                  className="mt-8 text-xs tracking-[0.2em] uppercase border border-black px-6 py-3 hover:bg-black hover:text-white transition-colors"
                 >
-                  <div className="md:w-32 shrink-0 text-xs text-gray-400 pt-0.5">
-                    {formatDate(item.date)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium leading-snug">{item.title}</p>
-                    {item.location && (
-                      <p className="text-xs text-gray-400 mt-0.5">{item.location}</p>
-                    )}
-                    {item.type === "blog" && item.description && (
-                      <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{item.description}</p>
-                    )}
-                  </div>
-                  {item.type === "own-event" && (
-                    <span className="text-xs tracking-widest uppercase border border-black px-2 py-0.5 self-start shrink-0">
-                      NV & more
-                    </span>
-                  )}
-                </Link>
-              ))}
-            </div>
+                  Load more ({results.length - visible} remaining)
+                </button>
+              )}
+            </>
           )}
         </>
       )}
