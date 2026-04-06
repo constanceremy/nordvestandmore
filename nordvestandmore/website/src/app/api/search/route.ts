@@ -12,6 +12,7 @@ export async function GET() {
     description: e.description || "",
     date: e.date || "",
     location: e.location || "",
+    tags: e.tags || [],
     url: e.ownEvent ? `/events/${e.slug}` : e.notionUrl,
     external: !e.ownEvent,
   }));
@@ -22,6 +23,7 @@ export async function GET() {
     description: p.excerpt || "",
     date: p.publishedDate || "",
     location: "",
+    tags: p.tags || [],
     url: `/blog/${p.slug}`,
     external: false,
   }));

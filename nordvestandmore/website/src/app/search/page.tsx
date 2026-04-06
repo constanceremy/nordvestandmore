@@ -10,6 +10,7 @@ type SearchItem = {
   description: string;
   date: string;
   location: string;
+  tags: string[];
   url: string;
   external: boolean;
 };
@@ -19,9 +20,10 @@ function score(item: SearchItem, q: string): number {
   const title = item.title.toLowerCase();
   const desc = item.description.toLowerCase();
   const loc = item.location.toLowerCase();
+  const tags = item.tags.join(" ").toLowerCase();
   if (title.startsWith(lower)) return 3;
   if (title.includes(lower)) return 2;
-  if (desc.includes(lower) || loc.includes(lower)) return 1;
+  if (desc.includes(lower) || loc.includes(lower) || tags.includes(lower)) return 1;
   return 0;
 }
 
