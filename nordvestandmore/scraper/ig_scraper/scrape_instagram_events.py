@@ -1000,6 +1000,11 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 ev["possible_duplicate"] = False
             elif dupe:
                 ev["possible_duplicate"] = False
+                # Cross-platform match found alongside same-source URL match — note it
+                dupe_date = (dupe.get('start_date') or '')[:10]
+                dupe_src = dupe.get('source', '')
+                if dupe_src and dupe_src != account:
+                    ev["duplicate_of"] = f"Also at: {dupe_src} ({dupe_date})"
             else:
                 ev["possible_duplicate"] = False
 

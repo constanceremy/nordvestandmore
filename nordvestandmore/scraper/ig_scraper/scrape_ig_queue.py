@@ -198,6 +198,13 @@ def process_queue(L, client, existing, all_entries, source_mapping, tmp_dir):
             # Fill the stub in place with the first event's data so the row is complete,
             # then mark scraped. No new row is created.
             print(f"  ✏️  Event already in Notion — filling stub in place and marking done")
+            # Find the original entry name to note in "Duplicate of"
+            dedup_key = ig.make_dedup_key(events[0])
+            original_page_id = existing.get(dedup_key)
+            if original_page_id:
+                original = next((e for e in all_entries if e.get("page_id") == original_page_id), None)
+                original_name = original.get("name", "") if original else ""
+                events[0]["duplicate_of"] = f"Duplicate of: {original_name or original_page_id}"
             ig.notion_update(page_id, events[0])
             mark_scraped(page_id)
 
