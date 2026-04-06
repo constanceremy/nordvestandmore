@@ -139,18 +139,6 @@ export default async function Home() {
                 href={`/blog/${post.slug}`}
                 className="group bg-white p-8 hover:bg-black hover:text-white transition-colors flex flex-col"
               >
-                {post.coverImage ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={post.coverImage}
-                    alt={post.title}
-                    className="w-full h-48 object-cover grayscale mb-6"
-                  />
-                ) : (
-                  <div className="w-full h-48 bg-gray-100 mb-6 flex items-center justify-center border border-gray-200 group-hover:border-gray-700">
-                    <span className="text-3xl text-gray-300" style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}>NV</span>
-                  </div>
-                )}
                 <p className="text-xs tracking-[0.25em] uppercase text-gray-400 group-hover:text-gray-300 mb-3">
                   {post.tags[0] ? `${post.tags[0]} | ` : ""}
                   {new Date(post.publishedDate)
