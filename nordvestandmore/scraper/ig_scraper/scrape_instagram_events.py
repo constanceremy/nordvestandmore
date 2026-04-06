@@ -570,7 +570,7 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
         if ev.get("to_tag"):
             props["To tag"] = {"rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]}
         if ev.get("duplicate_of"):
-            props["Duplicate of"] = {"rich_text": [{"text": {"content": ev["duplicate_of"][:2000]}}]}
+            props["Duplicate Of"] = {"rich_text": [{"text": {"content": ev["duplicate_of"][:2000]}}]}
         # If IG name is richer/more specific than existing entry, update the title too
         if ev.get("name_is_richer"):
             name = ev.get("event_name") or ""
@@ -670,7 +670,7 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
 
     # Duplicate of (rich_text) — cross-platform merge note (e.g. "Also at: fb-12345")
     if ev.get("duplicate_of"):
-        props["Duplicate of"] = {
+        props["Duplicate Of"] = {
             "rich_text": [{"text": {"content": ev["duplicate_of"][:2000]}}]
         }
 
