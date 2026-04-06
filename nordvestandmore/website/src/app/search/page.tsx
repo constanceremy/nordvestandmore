@@ -1,36 +1,27 @@
-import { getEvents, getBlogPosts } from "@/lib/notion";
-import type { EventItem, BlogPost } from "@/lib/notion";
+"use client";
+
+import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import type { Metadata } from "next";
 
-export const revalidate = 3600;
+type SearchItem = {
+  type: "blog" | "own-event" | "event";
+  title: string;
+  description: string;
+  date: string;
+  location: string;
+  url: string;
+  external: boolean;
+};
 
-export async function generateMetadata({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string }>;
-}): Promise<Metadata> {
-  const { q } = await searchParams;
-  return { title: q ? `"${q}" — Search | NV & more` : "Search | NV & more" };
-}
-
-function scoreEvent(e: EventItem, q: string): number {
+function score(item: SearchItem, q: string): number {
   const lower = q.toLowerCase();
-  if (e.title.toLowerCase().startsWith(lower)) return 3;
-  if (e.title.toLowerCase().includes(lower)) return 2;
-  if (
-    e.description?.toLowerCase().includes(lower) ||
-    e.location?.toLowerCase().includes(lower) ||
-    e.organizer?.toLowerCase().includes(lower)
-  ) return 1;
-  return 0;
-}
-
-function scoreBlog(p: BlogPost, q: string): number {
-  const lower = q.toLowerCase();
-  if (p.title.toLowerCase().startsWith(lower)) return 3;
-  if (p.title.toLowerCase().includes(lower)) return 2;
-  if (p.excerpt?.toLowerCase().includes(lower)) return 1;
+  const title = item.title.toLowerCase();
+  const desc = item.description.toLowerCase();
+  const loc = item.location.toLowerCase();
+  if (title.startsWith(lower)) return 3;
+  if (title.includes(lower)) return 2;
+  if (desc.includes(lower) || loc.includes(lower)) return 1;
   return 0;
 }
 
@@ -41,39 +32,43 @@ function formatDate(iso: string) {
   return d.toLocaleDateString("en-DK", { day: "numeric", month: "short", year: "numeric" });
 }
 
-const TAB_LABELS = ["Events", "Blog"] as const;
-type Tab = (typeof TAB_LABELS)[number];
+const TABS = ["Events", "Blog"] as const;
+type Tab = (typeof TABS)[number];
 
-export default async function SearchPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string; tab?: string }>;
-}) {
-  const { q, tab: tabParam } = await searchParams;
-  const query = q?.trim() ?? "";
-  const tab: Tab = tabParam === "Blog" ? "Blog" : "Events";
+export default function SearchPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const query = searchParams.get("q")?.trim() ?? "";
+  const tab: Tab = searchParams.get("tab") === "Blog" ? "Blog" : "Events";
 
-  const [allEvents, allPosts] = await Promise.all([getEvents(true), getBlogPosts()]);
+  const [index, setIndex] = useState<SearchItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const matchedEvents = query.length < 2
-    ? []
-    : allEvents
-        .map((e) => ({ e, s: scoreEvent(e, query) }))
-        .filter(({ s }) => s > 0)
-        .sort((a, b) => {
-          // Primary: date ascending; secondary: relevance score
-          if (a.e.date && b.e.date) return a.e.date.localeCompare(b.e.date);
-          return b.s - a.s;
-        })
-        .map(({ e }) => e);
+  useEffect(() => {
+    fetch("/api/search")
+      .then((r) => r.json())
+      .then((data) => { setIndex(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
 
-  const matchedPosts = query.length < 2
-    ? []
-    : allPosts
-        .map((p) => ({ p, s: scoreBlog(p, query) }))
-        .filter(({ s }) => s > 0)
-        .sort((a, b) => b.s - a.s)
-        .map(({ p }) => p);
+  const { events, blog } = useMemo(() => {
+    if (!query || query.length < 2) return { events: [], blog: [] };
+    const scored = index.map((item) => ({ item, s: score(item, query) })).filter(({ s }) => s > 0);
+    const events = scored
+      .filter(({ item }) => item.type === "event" || item.type === "own-event")
+      .sort((a, b) => {
+        if (a.item.date && b.item.date) return a.item.date.localeCompare(b.item.date);
+        return b.s - a.s;
+      })
+      .map(({ item }) => item);
+    const blog = scored
+      .filter(({ item }) => item.type === "blog")
+      .sort((a, b) => b.s - a.s)
+      .map(({ item }) => item);
+    return { events, blog };
+  }, [index, query]);
+
+  const results = tab === "Events" ? events : blog;
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-16">
@@ -86,20 +81,22 @@ export default async function SearchPage({
         >
           {query ? `"${query}"` : "Search"}
         </h1>
-        {query && (
+        {!loading && query && (
           <p className="text-sm text-gray-400 mt-3">
-            {matchedEvents.length} event{matchedEvents.length !== 1 ? "s" : ""} · {matchedPosts.length} article{matchedPosts.length !== 1 ? "s" : ""}
+            {events.length} event{events.length !== 1 ? "s" : ""} · {blog.length} article{blog.length !== 1 ? "s" : ""}
           </p>
         )}
       </div>
 
       {!query ? (
         <p className="text-gray-400">Enter a search term to find events and articles.</p>
+      ) : loading ? (
+        <p className="text-xs text-gray-400 tracking-widest uppercase">Loading…</p>
       ) : (
         <>
           {/* Tabs */}
           <div className="flex border-b border-black mb-8">
-            {TAB_LABELS.map((t) => (
+            {TABS.map((t) => (
               <Link
                 key={t}
                 href={`/search?q=${encodeURIComponent(query)}&tab=${t}`}
@@ -107,86 +104,43 @@ export default async function SearchPage({
                   tab === t ? "bg-black text-white" : "hover:bg-gray-50"
                 }`}
               >
-                {t} ({t === "Events" ? matchedEvents.length : matchedPosts.length})
+                {t} ({t === "Events" ? events.length : blog.length})
               </Link>
             ))}
           </div>
 
-          {/* Events tab */}
-          {tab === "Events" && (
-            <>
-              {matchedEvents.length === 0 ? (
-                <p className="text-gray-400">No events found for &ldquo;{query}&rdquo;.</p>
-              ) : (
-                <div className="divide-y divide-black border-t border-black">
-                  {matchedEvents.map((e) => {
-                    const href = e.ownEvent ? `/events/${e.slug}` : e.notionUrl;
-                    const isExternal = !e.ownEvent;
-                    return (
-                      <Link
-                        key={e.id}
-                        href={href}
-                        target={isExternal ? "_blank" : undefined}
-                        rel={isExternal ? "noopener noreferrer" : undefined}
-                        className="flex flex-col md:flex-row md:items-start gap-2 md:gap-8 py-5 hover:opacity-60 transition-opacity"
-                      >
-                        <div className="md:w-32 shrink-0 text-xs text-gray-400 pt-0.5">
-                          {e.date && !e.date.includes("T")
-                            ? formatDate(e.date)
-                            : e.date
-                            ? new Date(e.date).toLocaleDateString("en-DK", {
-                                day: "numeric",
-                                month: "short",
-                                year: "numeric",
-                              })
-                            : ""}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium leading-snug">{e.title}</p>
-                          {e.location && (
-                            <p className="text-xs text-gray-400 mt-0.5">{e.location}</p>
-                          )}
-                        </div>
-                        {e.ownEvent && (
-                          <span className="text-xs tracking-widest uppercase border border-black px-2 py-0.5 self-start shrink-0">
-                            NV & more
-                          </span>
-                        )}
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Blog tab */}
-          {tab === "Blog" && (
-            <>
-              {matchedPosts.length === 0 ? (
-                <p className="text-gray-400">No articles found for &ldquo;{query}&rdquo;.</p>
-              ) : (
-                <div className="divide-y divide-black border-t border-black">
-                  {matchedPosts.map((p) => (
-                    <Link
-                      key={p.id}
-                      href={`/blog/${p.slug}`}
-                      className="flex flex-col md:flex-row md:items-start gap-2 md:gap-8 py-5 hover:opacity-60 transition-opacity"
-                    >
-                      <div className="md:w-32 shrink-0 text-xs text-gray-400 pt-0.5">
-                        {formatDate(p.publishedDate)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium leading-snug">{p.title}</p>
-                        {p.excerpt && (
-                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{p.excerpt}</p>
-                        )}
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </>
+          {results.length === 0 ? (
+            <p className="text-gray-400">No {tab === "Events" ? "events" : "articles"} found for &ldquo;{query}&rdquo;.</p>
+          ) : (
+            <div className="divide-y divide-black border-t border-black">
+              {results.map((item, i) => (
+                <Link
+                  key={i}
+                  href={item.url}
+                  target={item.external ? "_blank" : undefined}
+                  rel={item.external ? "noopener noreferrer" : undefined}
+                  className="flex flex-col md:flex-row md:items-start gap-2 md:gap-8 py-5 hover:opacity-60 transition-opacity"
+                >
+                  <div className="md:w-32 shrink-0 text-xs text-gray-400 pt-0.5">
+                    {formatDate(item.date)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium leading-snug">{item.title}</p>
+                    {item.location && (
+                      <p className="text-xs text-gray-400 mt-0.5">{item.location}</p>
+                    )}
+                    {item.type === "blog" && item.description && (
+                      <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{item.description}</p>
+                    )}
+                  </div>
+                  {item.type === "own-event" && (
+                    <span className="text-xs tracking-widest uppercase border border-black px-2 py-0.5 self-start shrink-0">
+                      NV & more
+                    </span>
+                  )}
+                </Link>
+              ))}
+            </div>
           )}
         </>
       )}
