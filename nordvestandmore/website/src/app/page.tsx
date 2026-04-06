@@ -1,6 +1,7 @@
 import { getEvents, getBlogPosts } from "@/lib/notion";
 import Link from "next/link";
 import { ArrowRight, MapPin } from "lucide-react";
+import AddToCalendar from "@/components/AddToCalendar";
 
 export const revalidate = 3600;
 
@@ -85,13 +86,15 @@ export default async function Home() {
         ) : (
           <div className="divide-y divide-black">
             {displayEvents.map((event) => (
-              <a
+              <div
                 key={event.id}
-                href={event.notionUrl || "#"}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group grid grid-cols-[72px_1fr_auto] md:grid-cols-[72px_120px_1fr_200px_auto] items-baseline gap-4 md:gap-8 py-6 hover:bg-black hover:text-white transition-colors px-2 -mx-2"
+                className="group relative grid grid-cols-[72px_1fr_auto_auto] md:grid-cols-[72px_120px_1fr_200px_auto_auto] items-center gap-4 md:gap-8 py-4 hover:bg-black hover:text-white transition-colors px-2 -mx-2"
               >
+                {event.ownEvent ? (
+                  <Link href={`/events/${event.slug}`} className="absolute inset-0" aria-label={event.title} />
+                ) : (
+                  <a href={event.notionUrl || "#"} target="_blank" rel="noopener noreferrer" className="absolute inset-0" aria-label={event.title} />
+                )}
                 <span className="text-xs tracking-[0.2em] uppercase text-gray-400 group-hover:text-gray-300 leading-relaxed">
                   {formatDateLabel(event.date)}
                   {formatTimeLabel(event.date) && (
@@ -110,8 +113,11 @@ export default async function Home() {
                     {event.location}
                   </span>
                 )}
-                <ArrowRight size={14} className="shrink-0" />
-              </a>
+                <div className="relative z-10">
+                  <AddToCalendar title={event.title} date={event.date} location={event.location} description={event.description} compact />
+                </div>
+                <ArrowRight size={14} className="shrink-0 pointer-events-none" />
+              </div>
             ))}
           </div>
         )}
