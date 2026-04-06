@@ -109,6 +109,12 @@ export default function SearchModal({ onClose }: { onClose: () => void }) {
               placeholder="Search events, blog posts..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && query.trim().length >= 2) {
+                  onClose();
+                  router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+                }
+              }}
               className="flex-1 text-sm tracking-wide outline-none placeholder:text-gray-400"
             />
             <button onClick={onClose} className="hover:opacity-50 transition-opacity">
