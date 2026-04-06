@@ -64,45 +64,41 @@ export default async function BlogPage({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-black border border-black">
           {posts.map((post, i) => (
-            <Link
+            <div
               key={post.id}
-              href={`/blog/${post.slug}`}
-              className={`group bg-white p-8 hover:bg-black hover:text-white transition-colors flex flex-col ${
-                i === 0 && !tag ? "md:col-span-2" : ""
-              }`}
+              className={`bg-white p-8 flex flex-col ${i === 0 && !tag ? "md:col-span-2" : ""}`}
             >
               <div className="flex items-center gap-4 mb-3">
-                <p className="text-xs text-gray-400 group-hover:text-gray-300">
+                <p className="text-xs text-gray-400">
                   {formatDate(post.publishedDate)}
                 </p>
                 {post.tags.slice(0, 2).map((t) => (
-                  <span
+                  <Link
                     key={t}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      window.location.href = `/blog?tag=${encodeURIComponent(t)}`;
-                    }}
-                    className="text-xs font-semibold tracking-widest uppercase text-gray-400 group-hover:text-gray-300 hover:underline underline-offset-4 cursor-pointer"
+                    href={`/blog?tag=${encodeURIComponent(t)}`}
+                    className="text-xs font-semibold tracking-widest uppercase text-gray-400 hover:text-black underline underline-offset-4"
                   >
                     {t}
-                  </span>
+                  </Link>
                 ))}
               </div>
-              <h2
-                className={`font-medium leading-snug mb-2 ${i === 0 && !tag ? "text-3xl md:text-4xl" : "text-xl"}`}
-                style={i === 0 && !tag ? { fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" } : {}}
-              >
-                {post.title}
-              </h2>
-              {post.excerpt && (
-                <p className="text-sm text-gray-500 group-hover:text-gray-300 line-clamp-3 flex-1 leading-relaxed">
-                  {post.excerpt}
+              <Link href={`/blog/${post.slug}`} className="group flex flex-col flex-1 hover:opacity-60 transition-opacity">
+                <h2
+                  className={`font-medium leading-snug mb-2 ${i === 0 && !tag ? "text-3xl md:text-4xl" : "text-xl"}`}
+                  style={i === 0 && !tag ? { fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" } : {}}
+                >
+                  {post.title}
+                </h2>
+                {post.excerpt && (
+                  <p className="text-sm text-gray-500 line-clamp-3 flex-1 leading-relaxed">
+                    {post.excerpt}
+                  </p>
+                )}
+                <p className="text-xs font-semibold tracking-widest uppercase mt-4 underline underline-offset-4">
+                  Read more
                 </p>
-              )}
-              <p className="text-xs font-semibold tracking-widest uppercase mt-4 underline underline-offset-4 group-hover:text-white">
-                Read more
-              </p>
-            </Link>
+              </Link>
+            </div>
           ))}
         </div>
       )}
