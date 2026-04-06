@@ -766,9 +766,9 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
         total_events += len(events)
 
         past_count = 0
-        max_date = date.today() + timedelta(days=180)
         for event_data in events:
-            # Skip past events and events too far in the future
+            # Skip past events only — no upper date limit.
+            # Recurring events in recurring_events.py have their own 6-month window.
             event_date_str = event_data.get("event_date")
             if event_date_str:
                 try:
@@ -776,9 +776,6 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                     if ev_date_obj < date.today():
                         past_count += 1
                         log(f"  Skipping past event: {event_data.get('event_name')} ({event_date_str})")
-                        continue
-                    if ev_date_obj > max_date:
-                        log(f"  Skipping too-far-future event: {event_data.get('event_name')} ({event_date_str})")
                         continue
                 except ValueError:
                     pass

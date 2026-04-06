@@ -169,6 +169,15 @@ def process_queue(L, client, existing, all_entries, source_mapping, tmp_dir):
                 first_done[0] = True
                 print(f"  ✏️  Filling stub fields: {ev.get('event_name')} | {ev.get('start_date')}")
                 ig.notion_update(page_id, ev)
+                # Set tag separately — notion_update skips it to preserve manual edits,
+                # but stubs are new and have no tag yet
+                if ev.get("tag"):
+                    requests.patch(
+                        f"{ig.NOTION_API}/pages/{page_id}",
+                        headers=ig.NOTION_HEADERS,
+                        json={"properties": {"Tags": {"select": {"name": ev["tag"]}}}},
+                        timeout=30,
+                    )
                 key = ig.make_dedup_key(ev)
                 existing[key] = page_id
                 # Return a mock response that satisfies raise_for_status() and .json()
@@ -206,6 +215,13 @@ def process_queue(L, client, existing, all_entries, source_mapping, tmp_dir):
                 original_name = original.get("name", "") if original else ""
                 events[0]["duplicate_of"] = f"Duplicate of: {original_name or original_page_id}"
             ig.notion_update(page_id, events[0])
+            if events[0].get("tag"):
+                requests.patch(
+                    f"{ig.NOTION_API}/pages/{page_id}",
+                    headers=ig.NOTION_HEADERS,
+                    json={"properties": {"Tags": {"select": {"name": events[0]["tag"]}}}},
+                    timeout=30,
+                )
             mark_scraped(page_id)
 
     print()
