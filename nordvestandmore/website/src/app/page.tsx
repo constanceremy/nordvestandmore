@@ -13,7 +13,7 @@ function formatDateLabel(iso: string) {
 }
 
 function formatTimeLabel(iso: string) {
-  if (!iso) return "";
+  if (!iso || !iso.includes("T")) return "";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
   return d.toLocaleTimeString("en-DK", { hour: "2-digit", minute: "2-digit" });
