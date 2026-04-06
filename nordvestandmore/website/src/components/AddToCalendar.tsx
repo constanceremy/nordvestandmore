@@ -6,10 +6,11 @@ import { CalendarPlus } from "lucide-react";
 type Props = {
   title: string;
   date: string;        // ISO date string or "YYYY-MM-DD"
-  startTime?: string;  // "10:00am" or "10:00" or null
+  startTime?: string;  // "10:00am" or "10:00" — if omitted, extracted from date if it has a time component
   endTime?: string;
   location?: string;
   description?: string;
+  compact?: boolean;   // icon only, no label
 };
 
 function parseTime(t?: string): { h: number; m: number } | null {
@@ -24,8 +25,18 @@ function parseTime(t?: string): { h: number; m: number } | null {
   return { h, m };
 }
 
+function extractTimeFromISO(iso: string): { h: number; m: number } | null {
+  if (!iso.includes("T")) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  // Use Copenhagen local time
+  const local = new Date(d.toLocaleString("sv-SE", { timeZone: "Europe/Copenhagen" }));
+  return { h: local.getHours(), m: local.getMinutes() };
+}
+
 function toIcsDate(dateStr: string, time?: { h: number; m: number }): string {
-  const d = new Date(dateStr.includes("T") ? dateStr : `${dateStr}T00:00:00`);
+  const base = dateStr.includes("T") ? dateStr : `${dateStr}T00:00:00`;
+  const d = new Date(new Date(base).toLocaleString("sv-SE", { timeZone: "Europe/Copenhagen" }));
   const y = d.getFullYear();
   const mo = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -35,11 +46,7 @@ function toIcsDate(dateStr: string, time?: { h: number; m: number }): string {
   return `${y}${mo}${day}T${h}${m}00`;
 }
 
-function toGCalDate(dateStr: string, time?: { h: number; m: number }): string {
-  return toIcsDate(dateStr, time);
-}
-
-export default function AddToCalendar({ title, date, startTime, endTime, location, description }: Props) {
+export default function AddToCalendar({ title, date, startTime, endTime, location, description, compact }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -51,11 +58,11 @@ export default function AddToCalendar({ title, date, startTime, endTime, locatio
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  const start = parseTime(startTime) ?? undefined;
+  const start = parseTime(startTime) ?? extractTimeFromISO(date) ?? undefined;
   const end = parseTime(endTime) ?? (start ? { h: start.h + 1, m: start.m } : undefined);
 
-  const startFmt = toGCalDate(date, start);
-  const endFmt = toGCalDate(date, end);
+  const startFmt = toIcsDate(date, start);
+  const endFmt = toIcsDate(date, end);
 
   const googleUrl = new URL("https://calendar.google.com/calendar/render");
   googleUrl.searchParams.set("action", "TEMPLATE");
@@ -95,26 +102,30 @@ export default function AddToCalendar({ title, date, startTime, endTime, locatio
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 text-xs tracking-[0.15em] uppercase border border-black px-4 py-2.5 hover:bg-black hover:text-white transition-colors"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((v) => !v); }}
+        className={`flex items-center gap-2 text-xs tracking-[0.15em] uppercase border border-black hover:bg-black hover:text-white transition-colors ${
+          compact ? "p-2" : "px-4 py-2.5"
+        }`}
+        aria-label="Add to calendar"
+        title="Add to calendar"
       >
         <CalendarPlus size={13} />
-        Add to calendar
+        {!compact && "Add to calendar"}
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-20 bg-white border border-black min-w-[180px]">
+        <div className="absolute top-full right-0 mt-1 z-20 bg-white border border-black min-w-[180px]">
           <a
             href={googleUrl.toString()}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => setOpen(false)}
+            onClick={(e) => { e.stopPropagation(); setOpen(false); }}
             className="block px-4 py-3 text-xs tracking-[0.15em] uppercase hover:bg-black hover:text-white transition-colors border-b border-black"
           >
             Google Calendar
           </a>
           <button
-            onClick={downloadIcs}
+            onClick={(e) => { e.stopPropagation(); downloadIcs(); }}
             className="w-full text-left px-4 py-3 text-xs tracking-[0.15em] uppercase hover:bg-black hover:text-white transition-colors"
           >
             Apple / iCal

@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { MapPin, ArrowRight } from "lucide-react";
 import type { EventItem } from "@/lib/notion";
+import AddToCalendar from "@/components/AddToCalendar";
 
 function getDateRangeForPeriod(period: string): { from: string; to: string } | null {
   const cph = { timeZone: "Europe/Copenhagen" };
@@ -82,7 +83,7 @@ export default function EventList({ events }: { events: EventItem[] }) {
   }
 
   const sharedClass =
-    "group grid grid-cols-[80px_1fr_auto] md:grid-cols-[100px_1fr_200px_auto] items-center gap-6 py-8 hover:bg-black hover:text-white transition-colors px-2 -mx-2";
+    "group relative grid grid-cols-[80px_1fr_auto_auto] md:grid-cols-[100px_1fr_200px_auto_auto] items-center gap-4 md:gap-6 py-8 hover:bg-black hover:text-white transition-colors px-2 -mx-2";
 
   return (
     <div className="divide-y divide-black">
@@ -97,7 +98,7 @@ export default function EventList({ events }: { events: EventItem[] }) {
             <p className="text-xs font-semibold tracking-widest uppercase text-gray-400 group-hover:text-gray-300">{mo}</p>
             <p className="text-4xl font-bold leading-none">{day}</p>
             <p className="text-xs text-gray-400 group-hover:text-gray-300 mt-0.5">{weekday}</p>
-            {time && <p className="text-xs text-gray-400 group-hover:text-gray-300 mt-0.5">{time}</p>}
+            {time && time !== "All day" && <p className="text-xs text-gray-400 group-hover:text-gray-300 mt-0.5">{time}</p>}
           </div>
         );
 
@@ -130,16 +131,28 @@ export default function EventList({ events }: { events: EventItem[] }) {
           </div>
         );
 
-        return event.ownEvent ? (
-          <Link key={event.id} href={`/events/${event.slug}`} className={sharedClass}>
-            {dateBox}{infoBox}{priceBox}
-            <ArrowRight size={16} className="flex-shrink-0" />
-          </Link>
+        // Stretched link covers the whole row; calendar button sits above it (z-10)
+        const stretchedLink = event.ownEvent ? (
+          <Link href={`/events/${event.slug}`} className="absolute inset-0" aria-label={event.title} />
         ) : (
-          <a key={event.id} href={event.notionUrl || "#"} target="_blank" rel="noopener noreferrer" className={sharedClass}>
+          <a href={event.notionUrl || "#"} target="_blank" rel="noopener noreferrer" className="absolute inset-0" aria-label={event.title} />
+        );
+
+        return (
+          <div key={event.id} className={sharedClass}>
+            {stretchedLink}
             {dateBox}{infoBox}{priceBox}
-            <ArrowRight size={16} className="flex-shrink-0" />
-          </a>
+            <div className="relative z-10">
+              <AddToCalendar
+                title={event.title}
+                date={event.date}
+                location={event.location}
+                description={event.description}
+                compact
+              />
+            </div>
+            <ArrowRight size={16} className="flex-shrink-0 pointer-events-none" />
+          </div>
         );
       })}
     </div>
