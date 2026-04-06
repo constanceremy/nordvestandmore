@@ -83,7 +83,7 @@ export default function EventList({ events }: { events: EventItem[] }) {
   }
 
   const sharedClass =
-    "group relative grid grid-cols-[80px_1fr_auto_auto] md:grid-cols-[100px_1fr_200px_auto_auto] items-center gap-4 md:gap-6 py-8 hover:bg-black hover:text-white transition-colors px-2 -mx-2";
+    "group relative grid grid-cols-[80px_1fr_auto_auto] md:grid-cols-[100px_1fr_200px_auto_auto] items-center gap-4 md:gap-6 py-4 hover:bg-black hover:text-white transition-colors px-2 -mx-2";
 
   return (
     <div className="divide-y divide-black">
