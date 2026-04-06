@@ -527,6 +527,8 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
             location = location_parts[0]["text"]["content"] if location_parts else ""
             time_parts = props.get("Start Time", {}).get("rich_text", [])
             start_time = time_parts[0]["text"]["content"] if time_parts else ""
+            tag_val = props.get("Tags", {}).get("select", {})
+            existing_tag = tag_val.get("name", "") if tag_val else ""
             # Dedup key: URL + date (no name — Gemini is non-deterministic)
             key = f"{url_val}|{start_date}"
             if url_val:
@@ -539,6 +541,7 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
                 "url": url_val,
                 "location": location,
                 "start_time": start_time,
+                "tag": existing_tag,
             })
         pages_fetched += 1
         if not data.get("has_more"):
@@ -658,8 +661,8 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             "rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]
         }
 
-    # Tag (select) — only set on create, preserve manual edits on update
-    if ev.get("tag") and not is_update:
+    # Tag (select) — set on create, or on update if the existing entry had no tag
+    if ev.get("tag") and (not is_update or ev.get("set_tag_on_update")):
         props["Tags"] = {"select": {"name": ev["tag"]}}
 
     # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
@@ -1007,8 +1010,8 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
 
             if page_id:
                 # Check if incoming name/description is richer than existing (same-source update)
+                existing_entry = next((e for e in all_entries if e.get("page_id") == page_id), None)
                 if not merge_only and not ev.get("name_is_richer"):
-                    existing_entry = next((e for e in all_entries if e.get("page_id") == page_id), None)
                     if existing_entry:
                         existing_name = existing_entry.get("name") or ""
                         incoming_name = ev.get("event_name") or ""
@@ -1024,6 +1027,9 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                         incoming_desc = ev.get("description") or ""
                         if incoming_desc and len(incoming_desc) > max(len(existing_desc), 50):
                             ev["description_is_richer"] = True
+                # Set tag if the existing entry has no tag yet (e.g. created before auto-tag was live)
+                if ev.get("tag") and existing_entry and not existing_entry.get("tag"):
+                    ev["set_tag_on_update"] = True
                 r = notion_update(page_id, ev, merge_only=merge_only)
                 if r.status_code == 429:
                     time.sleep(1.5)
