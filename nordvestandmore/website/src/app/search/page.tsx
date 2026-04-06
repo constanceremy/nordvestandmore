@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, Suspense } from "react";
 import Link from "next/link";
 
 type SearchItem = {
@@ -37,7 +37,7 @@ function formatDate(iso: string) {
 const TABS = ["Events", "Blog"] as const;
 type Tab = (typeof TABS)[number];
 
-export default function SearchPage() {
+function SearchResults() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const query = searchParams.get("q")?.trim() ?? "";
@@ -147,5 +147,13 @@ export default function SearchPage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={<div className="max-w-4xl mx-auto px-6 py-16 text-xs text-gray-400 tracking-widest uppercase">Loading…</div>}>
+      <SearchResults />
+    </Suspense>
   );
 }
