@@ -101,26 +101,29 @@ export default function SearchModal({ onClose }: { onClose: () => void }) {
       <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 w-full max-w-2xl px-4">
         <div className="bg-white border border-black flex flex-col max-h-[70vh]">
           {/* Input */}
-          <div className="flex items-center gap-3 px-4 py-4 border-b border-black">
+          <form
+            className="flex items-center gap-3 px-4 py-4 border-b border-black"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (query.trim().length >= 2) {
+                router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+                onClose();
+              }
+            }}
+          >
             <Search size={16} className="text-gray-400 shrink-0" />
             <input
               ref={inputRef}
-              type="text"
+              type="search"
               placeholder="Search events, blog posts..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && query.trim().length >= 2) {
-                  onClose();
-                  router.push(`/search?q=${encodeURIComponent(query.trim())}`);
-                }
-              }}
-              className="flex-1 text-sm tracking-wide outline-none placeholder:text-gray-400"
+              className="flex-1 text-sm tracking-wide outline-none placeholder:text-gray-400 bg-transparent"
             />
-            <button onClick={onClose} className="hover:opacity-50 transition-opacity">
+            <button type="button" onClick={onClose} className="hover:opacity-50 transition-opacity">
               <X size={16} />
             </button>
-          </div>
+          </form>
 
           {/* Results */}
           <div className="overflow-y-auto">
