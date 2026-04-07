@@ -103,7 +103,7 @@ export default function AddToCalendar({ title, date, startTime, endTime, locatio
     <div ref={ref} className="relative">
       <button
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((v) => !v); }}
-        className={`flex items-center gap-2 text-xs tracking-[0.15em] uppercase border border-current transition-colors ${
+        className={`flex items-center gap-2 text-xs tracking-[0.15em] uppercase border border-current bg-white text-black group-hover:bg-black group-hover:text-white transition-colors ${
           compact ? "p-2" : "px-4 py-2.5"
         }`}
         aria-label="Add to calendar"
