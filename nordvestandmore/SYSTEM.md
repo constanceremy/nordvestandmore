@@ -283,11 +283,62 @@ Confirmation emails are sent via **Gmail SMTP** (nodemailer) from `nordvestandmo
 
 ## What's still to do
 
-- [ ] Switch Stripe to live mode before launch
+### Booking flow
+- [x] Stripe live keys in Vercel
+- [x] Stripe live webhook + STRIPE_WEBHOOK_SECRET
+- [x] Booking saved to Supabase on payment, deduplication in place
+- [x] Confirmation email to booker + notification email to nordvestandmore@gmail.com
+- [x] Sold-out status on website (sessions page + detail page)
+- [ ] Fill in start times for sessions in Notion
+- [ ] Test full booking flow end-to-end with live Stripe keys
 - [ ] Build reminder email cron job (day before event, queries Supabase)
-- [ ] Deploy to custom domain `nordvestandmore.com`
-- [ ] Blog: add pagination for very long posts (`getPageBlocks` only fetches first 100 blocks)
-- [ ] Retire Wix sync once website is the primary platform
-- [ ] Fix blog post content — inline images and links missing from Wix import (manual in Notion)
-- [ ] Privacy policy — keep updated in Notion as needed
-- [ ] Consider typography update: Tipster.io uses **Neue Haas Grotesk Display Pro** (thin weight, all-caps headlines) as design reference
+
+### Beta testing
+- [ ] Send DMs to Instagram followers — code **NVANDMORE100**, expires Apr 12
+- [ ] Collect feedback on booking flow, events page, "With us" tab, naming/clarity
+- [ ] Ask: *"Is there anything missing that would make you use this to plan your week and stay on top of what's going on in the neighbourhood? Any features you'd want to see?"*
+
+### Guide / Locations feature
+The guide is a filterable map + list of favourite NV spots, linked to events and articles.
+Import file ready: `Downloads/locations_notion_import.csv` (67 spots, coords from Google My Maps KML)
+
+**Step 1 — Notion setup (manual)**
+- [ ] Create Locations DB — fields: Name (title), Tags (multi-select), Description (text), Address (text), Instagram (text), Website (url), Lat (number), Lng (number), Published (checkbox)
+- [ ] Import `locations_notion_import.csv`; switch Tags→multi-select, Lat/Lng→number, Published→checkbox after import
+- [ ] Fill in missing coordinates for 10 spots: Ansgarkirken, Dansekapellet, Kapernaumskirken, Lygten Station, Nordic Health House, Tagensbo Kirke, TegneskoleKBH, Thoravej 29, Ungdomshuset, Urban 13
+- [ ] Add "Venue" relation field on Events DB → Locations DB
+- [ ] Add "Places mentioned" relation field on Blog DB → Locations DB
+- [ ] Link existing events to their venues in Notion
+- [ ] Link existing blog posts to places they mention (33 spots already have article links in the CSV)
+- [ ] Add descriptions + Instagram/website per location (can do gradually)
+- [ ] Add `NOTION_LOCATIONS_DB_ID` to `.env.local`, Vercel env vars, and GitHub Actions secrets
+- [ ] Share Locations DB ID so code work can begin
+
+**Step 1b — Scraper auto-linking (once Locations DB exists)**
+- [ ] Build `scraper/locations_cache.py` — fetches all Published locations from Notion at startup, builds normalised name→ID lookup dict
+- [ ] All scrapers (nv_scraper, web_scraper, fb_scraper, ig_scraper): after writing text Location field, fuzzy-match name against cache → if matched, PATCH the Venue relation field on the event
+- [ ] Unmatched locations skip silently — no breakage to existing scraper behaviour
+
+**Step 2 — Website (once Locations DB exists)**
+- [ ] Add `getLocations()` and `getLocationBySlug()` to `src/lib/notion.ts`
+- [ ] Build `/guide` page — tag filter pills (same style as events), Leaflet + OpenStreetMap map (free), list of spots
+- [ ] Build `/guide/[slug]` location detail page — name, tags, description, map pin, Instagram/website links, "Events here" (from Venue relation), "Read about it" (from Places mentioned relation)
+- [ ] On `/events/[slug]` — show "Venue" as a link to `/guide/[slug]` if relation exists
+- [ ] On `/blog/[slug]` — show "Places in this article" as linked chips if relation exists
+- [ ] Add "Guide" link to main navigation
+- [ ] Include locations in `/api/search` results
+
+### Content
+- [ ] Fix remaining blog posts in Notion — inline images and links missing from Wix import
+
+### Legal
+- [ ] Privacy policy page (GDPR required — collecting emails + payments)
+
+### Launch
+- [ ] Connect custom domain `nordvestandmore.com` (Wix → Vercel)
+- [ ] Add Vercel Analytics or Plausible
+- [ ] Retire Wix sync once website is live
+
+### Tech debt
+- [ ] Events DB Tags: change from `select` → `multi_select` in Notion after launch (website already handles both; scraper needs updating too)
+- [ ] Blog: `getPageBlocks` only fetches first 100 blocks — add pagination for very long posts
