@@ -1,8 +1,9 @@
 import { getLocations, getLocationBySlug, getEventsByLocation, getBlogPostsByLocation } from "@/lib/notion";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, MapPin } from "lucide-react";
+import { ArrowLeft, MapPin } from "lucide-react";
 import LocationMapWrapper from "@/components/LocationMapWrapper";
+import LocationTabs from "@/components/LocationEvents";
 import type { Metadata } from "next";
 
 export const revalidate = 3600;
@@ -27,15 +28,6 @@ export async function generateMetadata({
   };
 }
 
-function formatDate(iso: string) {
-  if (!iso) return "";
-  return new Date(iso).toLocaleDateString("en-DK", { day: "numeric", month: "short" }).toUpperCase();
-}
-
-function formatTime(iso: string) {
-  if (!iso || !iso.includes("T")) return "";
-  return new Date(iso).toLocaleTimeString("en-DK", { hour: "2-digit", minute: "2-digit" });
-}
 
 export default async function LocationPage({
   params,
@@ -103,60 +95,7 @@ export default async function LocationPage({
             {location.name}
           </h1>
 
-          {/* Upcoming events */}
-          {events.length > 0 && (
-            <div className="mb-10">
-              <p className="text-xs tracking-[0.3em] uppercase border-b border-black pb-3 mb-3">
-                Upcoming events here
-              </p>
-              <div className="divide-y divide-black">
-                {events.map((event) => (
-                  <div key={event.id} className="group relative flex items-center justify-between gap-4 py-3 hover:bg-black hover:text-white transition-colors px-2 -mx-2">
-                    {event.ownEvent ? (
-                      <Link href={`/events/${event.slug}`} className="absolute inset-0" aria-label={event.title} />
-                    ) : (
-                      <a href={event.notionUrl || "#"} target="_blank" rel="noopener noreferrer" className="absolute inset-0" aria-label={event.title} />
-                    )}
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="text-center flex-shrink-0 w-10">
-                        <p className="text-xs text-gray-400 group-hover:text-gray-300 leading-none">{formatDate(event.date)}</p>
-                        {formatTime(event.date) && <p className="text-xs text-gray-400 group-hover:text-gray-300 mt-0.5">{formatTime(event.date)}</p>}
-                      </div>
-                      <p className="text-sm font-medium truncate">{event.title}</p>
-                    </div>
-                    <ArrowRight size={12} className="flex-shrink-0 pointer-events-none" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Related articles */}
-          {posts.length > 0 && (
-            <div>
-              <p className="text-xs tracking-[0.3em] uppercase border-b border-black pb-3 mb-3">
-                From the blog
-              </p>
-              <div className="divide-y divide-black">
-                {posts.map((post) => (
-                  <Link
-                    key={post.id}
-                    href={`/blog/${post.slug}`}
-                    className="group flex items-center justify-between gap-4 py-3 hover:bg-black hover:text-white transition-colors px-2 -mx-2"
-                  >
-                    <p className="text-sm font-medium leading-snug">{post.title}</p>
-                    <ArrowRight size={12} className="flex-shrink-0" />
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {events.length === 0 && posts.length === 0 && (
-            <p className="text-xs tracking-[0.2em] uppercase text-gray-400">
-              No events or articles linked yet.
-            </p>
-          )}
+          <LocationTabs events={events} posts={posts} />
         </div>
       </div>
     </div>
