@@ -10,8 +10,7 @@ export const revalidate = 3600;
 export const dynamicParams = true;
 
 export async function generateStaticParams() {
-  const locations = await getLocations();
-  return locations.map((l) => ({ slug: l.slug }));
+  return [];
 }
 
 export async function generateMetadata({
