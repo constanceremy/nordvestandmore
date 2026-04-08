@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import "leaflet/dist/leaflet.css";
 import type { LocationItem } from "@/lib/notion";
 
 type Props = {
@@ -15,10 +16,7 @@ export default function GuideMap({ locations, activeSlug }: Props) {
     if (typeof window === "undefined") return;
 
     // Dynamically import Leaflet to avoid SSR issues
-    Promise.all([
-      import("leaflet"),
-      import("leaflet/dist/leaflet.css" as string),
-    ]).then(([L]) => {
+    import("leaflet").then((L) => {
       const container = document.getElementById("guide-map");
       if (!container) return;
       // Destroy existing map instance if any
