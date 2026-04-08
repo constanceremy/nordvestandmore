@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { MapPin, ArrowRight } from "lucide-react";
+import { ArrowRight, X } from "lucide-react";
 import type { LocationItem } from "@/lib/notion";
 
 const GuideMap = dynamic(() => import("@/components/GuideMap"), { ssr: false });
@@ -19,6 +19,7 @@ const TAG_ORDER = [
 
 export default function GuideClient({ locations }: { locations: LocationItem[] }) {
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   // Collect all tags that appear in the data, in preferred order
   const allTags = useMemo(() => {
@@ -28,10 +29,26 @@ export default function GuideClient({ locations }: { locations: LocationItem[] }
     return [...ordered, ...rest];
   }, [locations]);
 
-  const filtered = useMemo(
-    () => activeTag ? locations.filter((l) => l.tags.includes(activeTag)) : locations,
-    [locations, activeTag]
-  );
+  // Tags matching the search query (for filtered pill suggestions)
+  const matchingTags = useMemo(() => {
+    if (!query) return allTags;
+    const lower = query.toLowerCase();
+    return allTags.filter((t) => t.includes(lower));
+  }, [allTags, query]);
+
+  const filtered = useMemo(() => {
+    let result = locations;
+    if (activeTag) result = result.filter((l) => l.tags.includes(activeTag));
+    if (query && !activeTag) {
+      const lower = query.toLowerCase();
+      result = result.filter(
+        (l) =>
+          l.name.toLowerCase().includes(lower) ||
+          l.tags.some((t) => t.toLowerCase().includes(lower))
+      );
+    }
+    return result;
+  }, [locations, activeTag, query]);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-16">
@@ -49,27 +66,49 @@ export default function GuideClient({ locations }: { locations: LocationItem[] }
         </p>
       </div>
 
-      {/* Tag filters */}
-      <div className="flex flex-wrap gap-2 mb-8">
-        <button
-          onClick={() => setActiveTag(null)}
-          className={`text-xs tracking-[0.15em] uppercase px-3 py-1.5 border transition-colors ${
-            activeTag === null ? "bg-black text-white border-black" : "border-black hover:bg-black hover:text-white"
-          }`}
-        >
-          All
-        </button>
-        {allTags.map((tag) => (
+      {/* Search + tag filters */}
+      <div className="mb-8 space-y-3">
+        {/* Search input */}
+        <div className="relative">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setActiveTag(null); }}
+            placeholder="Search spots or tags..."
+            className="w-full border border-black px-4 py-2.5 text-sm tracking-wide placeholder:text-gray-400 outline-none focus:bg-gray-50"
+          />
+          {query && (
+            <button
+              onClick={() => setQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* Tag pills — filtered by search query */}
+        <div className="flex flex-wrap gap-2">
           <button
-            key={tag}
-            onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+            onClick={() => { setActiveTag(null); setQuery(""); }}
             className={`text-xs tracking-[0.15em] uppercase px-3 py-1.5 border transition-colors ${
-              activeTag === tag ? "bg-black text-white border-black" : "border-black hover:bg-black hover:text-white"
+              !activeTag && !query ? "bg-black text-white border-black" : "border-black hover:bg-black hover:text-white"
             }`}
           >
-            {tag}
+            All
           </button>
-        ))}
+          {matchingTags.map((tag) => (
+            <button
+              key={tag}
+              onClick={() => { setActiveTag(activeTag === tag ? null : tag); setQuery(""); }}
+              className={`text-xs tracking-[0.15em] uppercase px-3 py-1.5 border transition-colors ${
+                activeTag === tag ? "bg-black text-white border-black" : "border-black hover:bg-black hover:text-white"
+              }`}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Map + List split */}
