@@ -32,6 +32,7 @@ from dedup import load_source_mapping, find_duplicate, similarity, are_sources_r
 from auto_tag import classify_event, is_not_event, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
 from fix_locations import clean_location
+from locations_cache import find_location_id
 
 # ────────────────── Config ──────────────────
 
@@ -2956,12 +2957,35 @@ def fetch_kapernaumskirken(url: str) -> str:
                 return results;
             }''')
 
+            # Click each card to discover its individual event URL
+            cards = page.query_selector_all(".ant-card")
+            event_urls = []
+            widget_url = _KAPERNAUMSKIRKEN_WIDGET
+            fallback = "https://www.kapernaumskirken.dk/begivenheder--faellesskaber"
+            for card in cards:
+                try:
+                    card.click()
+                    page.wait_for_timeout(2000)
+                    current = page.url
+                    if current != widget_url and "kapernaumskirken.dk" in current:
+                        event_urls.append(current.split("?")[0])
+                        page.go_back(wait_until="networkidle", timeout=10000)
+                        page.wait_for_timeout(1000)
+                    else:
+                        event_urls.append(fallback)
+                except Exception:
+                    event_urls.append(fallback)
+
+            # Pad in case counts differ
+            while len(event_urls) < len(raw_events):
+                event_urls.append(fallback)
+
             if not raw_events:
                 break
 
             log(f"    Page {page_num}: {len(raw_events)} event(s)")
 
-            for ev in raw_events:
+            for i, ev in enumerate(raw_events):
                 name = ev.get("eventName", "")
                 if not name:
                     continue
@@ -3027,6 +3051,8 @@ def fetch_kapernaumskirken(url: str) -> str:
 
                 loc = ev.get("location", "") or _KAPERNAUMSKIRKEN_ADDR
 
+                event_url = event_urls[i] if i < len(event_urls) else "https://www.kapernaumskirken.dk/begivenheder--faellesskaber"
+
                 events_data.append({
                     "event_name": name,
                     "event_date": ev_date,
@@ -3035,7 +3061,7 @@ def fetch_kapernaumskirken(url: str) -> str:
                     "location": loc,
                     "organizer": "Kapernaumskirken",
                     "description": None,
-                    "url": "https://www.kapernaumskirken.dk/begivenheder--faellesskaber",
+                    "url": event_url,
                 })
 
             # Stop if all events on this page were beyond max date
@@ -3234,6 +3260,10 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
         props["Location"] = {
             "rich_text": [{"text": {"content": ev["location"][:2000]}}]
         }
+        # Auto-link Locations relation if name matches a DB entry
+        loc_id = find_location_id(ev["location"], NOTION_TOKEN)
+        if loc_id:
+            props["Locations"] = {"relation": [{"id": loc_id}]}
 
     if ev.get("source"):
         props["Source"] = {

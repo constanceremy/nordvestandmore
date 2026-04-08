@@ -37,8 +37,9 @@ import requests
 # Add parent dir to path for shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from dedup import load_source_mapping, find_duplicate, similarity, are_sources_related, get_source_priority
-from auto_tag import classify_event, is_not_event, is_deal, should_skip_entirely, is_excluded_location, is_unknown_location
+from auto_tag import classify_event, classify_seasonal, is_not_event, is_deal, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
+from locations_cache import find_location_id
 from deals_db import push_to_deals_db
 from fix_locations import clean_location
 
@@ -527,10 +528,13 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
             location = location_parts[0]["text"]["content"] if location_parts else ""
             time_parts = props.get("Start Time", {}).get("rich_text", [])
             start_time = time_parts[0]["text"]["content"] if time_parts else ""
-            tag_val = props.get("Tags", {}).get("select", {})
-            existing_tag = tag_val.get("name", "") if tag_val else ""
-            # Dedup key: URL + date (no name — Gemini is non-deterministic)
-            key = f"{url_val}|{start_date}"
+            ms_tags = props.get("Tags", {}).get("multi_select", [])
+            existing_tag = ms_tags[0]["name"] if ms_tags else (props.get("Tags", {}).get("select") or {}).get("name", "")
+            # Dedup key: URL + date + time + compressed location.
+            # Including time and location lets multiple events from the same IG post
+            # on the same day (even same time but different venue) get distinct keys.
+            loc_key = re.sub(r"[^a-zæøå0-9]", "", location.lower().strip())
+            key = f"{url_val}|{start_date}|{start_time}|{loc_key}"
             if url_val:
                 key_to_page[key] = page["id"]
             all_entries.append({
@@ -622,6 +626,10 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
         props["Location"] = {
             "rich_text": [{"text": {"content": ev["location"][:2000]}}]
         }
+        # Auto-link Locations relation if name matches a DB entry
+        loc_id = find_location_id(ev["location"], NOTION_TOKEN)
+        if loc_id:
+            props["Locations"] = {"relation": [{"id": loc_id}]}
 
     # Source (text) — e.g. "@account" or "LYGTEN_STATION"
     if ev.get("source"):
@@ -661,9 +669,9 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             "rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]
         }
 
-    # Tag (select) — set on create, or on update if the existing entry had no tag
-    if ev.get("tag") and (not is_update or ev.get("set_tag_on_update")):
-        props["Tags"] = {"select": {"name": ev["tag"]}}
+    # Tags (multi_select) — set on create, or on update if the existing entry had no tag
+    if ev.get("tags_list") and (not is_update or ev.get("set_tag_on_update")):
+        props["Tags"] = {"multi_select": [{"name": t} for t in ev["tags_list"]]}
 
     # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
     if ev.get("review_notes"):
@@ -681,8 +689,13 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
 
 
 def make_dedup_key(ev: dict) -> str:
-    """Build a deduplication key: URL + date (no name — Gemini is non-deterministic)."""
-    return f"{ev.get('url', '')}|{ev.get('start_date', '')}"
+    """Build a deduplication key: URL + date + time + compressed location.
+    Including time and location lets multiple events from the same IG post
+    on the same day (even same time but different venue) get distinct keys.
+    Gemini's location output is stable enough across re-scrapes of the same post.
+    """
+    loc = re.sub(r"[^a-zæøå0-9]", "", (ev.get("location") or "").lower().strip())
+    return f"{ev.get('url', '')}|{ev.get('start_date', '')}|{ev.get('start_time', '')}|{loc}"
 
 
 def notion_create(ev: dict):
@@ -911,6 +924,9 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                     organizer or "",
                 ),
             }
+            _primary = ev["tag"]
+            _seasonal = classify_seasonal(event_data.get("event_name", ""), event_data.get("description", ""))
+            ev["tags_list"] = ([_primary] if _primary else []) + [s for s in _seasonal if s != _primary]
 
             # Skip events at excluded locations (not in Nordvest)
             if is_excluded_location(ev.get("location", "")):

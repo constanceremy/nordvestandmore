@@ -43,6 +43,7 @@ jobs:
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          NOTION_LOCATIONS_DB_ID: ${{ secrets.NOTION_LOCATIONS_DB_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           IG_USERNAME: ${{ secrets.IG_USERNAME }}
           IG_PASSWORD: ${{ secrets.IG_PASSWORD }}

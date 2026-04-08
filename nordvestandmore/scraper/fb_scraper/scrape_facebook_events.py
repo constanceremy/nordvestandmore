@@ -28,10 +28,11 @@ import requests
 # Add parent dir to path for shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from dedup import load_source_mapping, find_duplicate, load_fb_to_ig_map, _extract_fb_id, similarity, are_sources_related, get_source_priority
-from auto_tag import classify_event, is_not_event, is_deal, should_skip_entirely, is_excluded_location, is_unknown_location
+from auto_tag import classify_event, classify_seasonal, is_not_event, is_deal, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
 from deals_db import push_to_deals_db
 from fix_locations import clean_location
+from locations_cache import find_location_id
 
 # -------------------- CONFIG --------------------
 SLUG = "FACEBOOK"
@@ -960,6 +961,10 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
         props["Location"] = {
             "rich_text": [{"text": {"content": ev["location"][:2000]}}]
         }
+        # Auto-link Locations relation if name matches a DB entry
+        loc_id = find_location_id(ev["location"], NOTION_TOKEN)
+        if loc_id:
+            props["Locations"] = {"relation": [{"id": loc_id}]}
 
     if ev.get("source"):
         props["Source"] = {
@@ -996,9 +1001,9 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             "rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]
         }
 
-    # Tag (select) — only set on create, preserve manual edits on update
-    if ev.get("tag") and not is_update:
-        props["Tags"] = {"select": {"name": ev["tag"]}}
+    # Tags (multi_select) — set on create, or on update if the existing entry had no tag
+    if ev.get("tags_list") and (not is_update or ev.get("set_tag_on_update")):
+        props["Tags"] = {"multi_select": [{"name": t} for t in ev["tags_list"]]}
 
     # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
     if ev.get("review_notes"):
@@ -1313,6 +1318,9 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                     event_data.get("organizer", ""),
                 ),
             }
+            _primary = ev["tag"]
+            _seasonal = classify_seasonal(event_data.get("event_name", ""), event_data.get("description", ""))
+            ev["tags_list"] = ([_primary] if _primary else []) + [s for s in _seasonal if s != _primary]
 
             # Skip events at excluded locations (not in Nordvest)
             if is_excluded_location(ev.get("location", "")):
@@ -1484,6 +1492,13 @@ def main():
     existing, all_entries = notion_existing_entries()
     source_mapping = load_source_mapping()
     fb_to_ig = load_fb_to_ig_map()
+
+    # ── Process manually-queued FB posts/events before the regular scrape ──
+    try:
+        import scrape_fb_queue as fb_queue
+        fb_queue.process_queue(client, existing, all_entries, source_mapping)
+    except Exception as e:
+        log(f"⚠️  FB queue processing failed: {e}")
     totals = {"created": 0, "updated": 0, "skipped": 0, "flagged_dupes": 0, "total_events": 0}
 
     for idx, page_entry in enumerate(fb_pages, 1):
