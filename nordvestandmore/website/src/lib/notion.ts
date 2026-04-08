@@ -47,6 +47,16 @@ export type BlogPost = {
   tags: string[];
   author: string;
   notionUrl: string;
+  locationIds: string[];
+};
+
+export type LocationItem = {
+  id: string;
+  slug: string;
+  name: string;
+  tags: string[];
+  lat: number | null;
+  lng: number | null;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -264,6 +274,11 @@ function getRelationId(prop: PageObjectResponse["properties"][string]): string {
   return prop.relation[0]?.id ?? "";
 }
 
+function getRelationIds(prop: PageObjectResponse["properties"][string]): string[] {
+  if (!prop || prop.type !== "relation") return [];
+  return prop.relation.map((r) => r.id);
+}
+
 export async function getBookingPolicy(id: string): Promise<BookingPolicy | null> {
   if (!id) return null;
   const notion = getNotion();
@@ -429,6 +444,7 @@ export async function getBlogPosts(): Promise<BlogPost[]> {
         tags: getMultiSelect(p["Tags"]),
         author: getText(p["Author"]) || "NV & more",
         notionUrl: page.url,
+        locationIds: getRelationIds(p["Locations"]),
       };
     })
     .sort((a, b) => b.publishedDate.localeCompare(a.publishedDate));
@@ -443,4 +459,142 @@ export async function getPageBlocks(pageId: string) {
   const notion = getNotion();
   const response = await notion.blocks.children.list({ block_id: pageId });
   return response.results;
+}
+
+// ─── Locations ────────────────────────────────────────────────────────────────
+
+export async function getLocations(): Promise<LocationItem[]> {
+  const notion = getNotion();
+  const dbId = process.env.NOTION_LOCATIONS_DB_ID!;
+
+  const allResults: PageObjectResponse[] = [];
+  let cursor: string | undefined;
+  do {
+    const response = await notion.databases.query({
+      database_id: dbId,
+      page_size: 100,
+      sorts: [{ property: "Name", direction: "ascending" }],
+      ...(cursor ? { start_cursor: cursor } : {}),
+    });
+    allResults.push(...response.results.filter((p): p is PageObjectResponse => p.object === "page"));
+    cursor = response.has_more ? (response.next_cursor ?? undefined) : undefined;
+  } while (cursor);
+
+  return allResults
+    .map((page) => {
+      const p = page.properties;
+      const name = getText(p["Name"]);
+      const latStr = getText(p["Lat"]);
+      const lngStr = getText(p["Lng"]);
+      return {
+        id: page.id,
+        slug: slugify(name),
+        name,
+        tags: getMultiSelect(p["Tags"]),
+        lat: latStr ? parseFloat(latStr) : null,
+        lng: lngStr ? parseFloat(lngStr) : null,
+      };
+    })
+    .filter((l) => l.name);
+}
+
+export async function getLocationBySlug(slug: string): Promise<LocationItem | null> {
+  const all = await getLocations();
+  return all.find((l) => l.slug === slug) ?? null;
+}
+
+export async function getEventsByLocation(locationId: string): Promise<EventItem[]> {
+  const notion = getNotion();
+  const dbId = process.env.NOTION_EVENTS_DB_ID!;
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Copenhagen" });
+
+  const response = await notion.databases.query({
+    database_id: dbId,
+    filter: {
+      and: [
+        { property: "Locations", relation: { contains: locationId } },
+        { property: "Start Date", date: { on_or_after: today } },
+        { property: "Deleted", checkbox: { equals: false } },
+        {
+          or: [
+            { property: "Approved", checkbox: { equals: true } },
+            { property: "Own Event", checkbox: { equals: true } },
+          ],
+        },
+      ],
+    },
+    sorts: [{ property: "Start Date", direction: "ascending" }],
+  });
+
+  return response.results
+    .filter((p): p is PageObjectResponse => p.object === "page")
+    .map((page) => {
+      const p = page.properties;
+      const title = getText(p["Event Name"]);
+      const startDate = getDate(p["Start Date"]);
+      const startTime = parseTime12h(getText(p["Start Time"]));
+      const dateTime = startDate && startTime ? `${startDate}T${startTime}:00` : startDate;
+      return {
+        id: page.id,
+        slug: getText(p["Slug"]) || slugify(title),
+        title,
+        description: getText(p["Description"]),
+        date: dateTime,
+        endDate: getDate(p["End Date"]),
+        endTime: getText(p["End Time"]),
+        location: getText(p["Location"]),
+        organizer: getText(p["Organizer"]),
+        source: getText(p["Source"]),
+        instagramHandle: getText(p["Instagramhandle"]),
+        sourceType: getText(p["Source Type"]),
+        price: getNumber(p["Price"]),
+        currency: getText(p["Currency"]) || "DKK",
+        maxSpots: getNumber(p["Max Spots"]),
+        bookedSpots: getNumber(p["Booked Spots"]),
+        eventType: getText(p["Source Type"]) || getText(p["Event Type"]),
+        tags: getMultiSelect(p["Tags"]).length > 0 ? getMultiSelect(p["Tags"]) : getText(p["Tags"]) ? [getText(p["Tags"])] : [],
+        coverImage: getFiles(p["Cover Image"]),
+        isRecurring: getText(p["Source Type"]) === "Recurring",
+        recurrenceRule: getText(p["Recurrence Rule"]),
+        stripeProductId: getText(p["Stripe Product ID"]),
+        stripePriceId: getText(p["Stripe Price ID"]),
+        notionUrl: getText(p["Event Link"]) || page.url,
+        ownEvent: getCheckbox(p["Own Event"]),
+      };
+    });
+}
+
+export async function getBlogPostsByLocation(locationId: string): Promise<BlogPost[]> {
+  const notion = getNotion();
+  const dbId = process.env.NOTION_BLOG_DB_ID!;
+
+  const response = await notion.databases.query({
+    database_id: dbId,
+    filter: {
+      and: [
+        { property: "Locations", relation: { contains: locationId } },
+        { property: "Published", checkbox: { equals: true } },
+      ],
+    },
+    sorts: [{ property: "Published Date", direction: "descending" }],
+  });
+
+  return response.results
+    .filter((p): p is PageObjectResponse => p.object === "page")
+    .map((page) => {
+      const p = page.properties;
+      const title = getText(p["Name"] ?? p["Title"]);
+      return {
+        id: page.id,
+        slug: getText(p["Slug"]) || slugify(title),
+        title,
+        excerpt: getText(p["Excerpt"]),
+        publishedDate: getDate(p["Published Date"]) || page.created_time,
+        coverImage: getFiles(p["Cover Image"]),
+        tags: getMultiSelect(p["Tags"]),
+        author: getText(p["Author"]) || "NV & more",
+        notionUrl: page.url,
+        locationIds: getRelationIds(p["Locations"]),
+      };
+    });
 }
