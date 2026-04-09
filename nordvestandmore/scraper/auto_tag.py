@@ -605,6 +605,78 @@ def is_unknown_location(location: str) -> bool:
     return True
 
 
+SEASONAL_RULES: list[dict] = [
+    # Each rule: { "tag": str, "keywords": [str], "patterns": [regex_str] }
+    # Multiple rules can match — ALL matching seasonal tags are returned.
+
+    {"tag": "Christmas",        "keywords": ["juletræ", "julekoncert", "juleaften", "julemarked",
+                                              "julestemning", "julefest", "advent", "christmas"],
+                                 "patterns": [r"\bjul\b"]},
+
+    {"tag": "Julefrokost",      "keywords": ["julefrokost"], "patterns": []},
+
+    {"tag": "Nytår",            "keywords": ["nytår", "nytårsfest", "nytårskoncert",
+                                              "new year's eve", "new years eve"], "patterns": []},
+
+    {"tag": "Fastelavn",        "keywords": ["fastelavn"], "patterns": []},
+
+    {"tag": "Easter",           "keywords": ["påske", "easter", "langfredag", "palmesøndag"],
+                                 "patterns": []},
+
+    {"tag": "Mortensaften",     "keywords": ["mortensaften", "st. martin", "martinsgås", "mortens aften"],
+                                 "patterns": []},
+
+    {"tag": "Sankt Hans",       "keywords": ["sankt hans", "sankthansfest", "midsommer", "midsommar"],
+                                 "patterns": []},
+
+    {"tag": "Grundlovsdag",     "keywords": ["grundlovsdag", "grundlovsarrangement"],
+                                 "patterns": [r"\bgrundlov\b"]},
+
+    {"tag": "Ramadan",          "keywords": ["ramadan", "iftar"], "patterns": []},
+
+    {"tag": "Eid",              "keywords": ["eid ul", "eid al", "eid-", "eid "], "patterns": [r"\beid\b"]},
+
+    {"tag": "Diwali",           "keywords": ["diwali", "deepavali"], "patterns": []},
+
+    {"tag": "Chinese New Year", "keywords": ["chinese new year", "kinesisk nytår", "lunar new year",
+                                              "mondneujahrsfest"], "patterns": []},
+
+    {"tag": "Pride",            "keywords": ["pride"], "patterns": []},
+
+    {"tag": "International Women's Day", "keywords": ["8. marts", "womens day", "women's day",
+                                                       "international women", "kvindernes kampdag"],
+                                          "patterns": []},
+
+    {"tag": "Black History Month", "keywords": ["black history month", "black history"],
+                                    "patterns": []},
+
+    {"tag": "Summer",           "keywords": ["sommerfest", "havefest", "sommersolhverv",
+                                              "outdoor festival", "sommerjazz"],
+                                 "patterns": []},
+]
+
+
+def classify_seasonal(event_name: str, description: str = "") -> list[str]:
+    """Return all seasonal/cultural tags that match this event.
+
+    Unlike classify_event() (first match wins), ALL matching seasonal tags
+    are returned — so a Christmas jazz concert gets both 'Music' and 'Christmas'.
+    """
+    combined = f"{event_name} {description}".lower()
+    combined_raw = f"{event_name} {description}"
+    tags: list[str] = []
+    for rule in SEASONAL_RULES:
+        matched = any(kw in combined for kw in rule.get("keywords", []))
+        if not matched:
+            matched = any(
+                re.search(p, combined_raw, re.IGNORECASE)
+                for p in rule.get("patterns", [])
+            )
+        if matched:
+            tags.append(rule["tag"])
+    return tags
+
+
 def classify_event(
     event_name: str,
     description: str = "",
