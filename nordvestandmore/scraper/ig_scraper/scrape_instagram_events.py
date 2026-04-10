@@ -200,10 +200,6 @@ def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
         profile = instaloader.Profile.from_username(L.context, username)
     except Exception as e:
         log(f"Could not load @{username}: {e}")
-        # Profile doesn't exist — no point retrying with login
-        if "does not exist" in str(e).lower():
-            log(f"  ⚠️  @{username} not found on Instagram — skipping (account deleted or renamed?)")
-            return
         if auto_login_retry and not _logged_in:
             if try_login(L):
                 try:
