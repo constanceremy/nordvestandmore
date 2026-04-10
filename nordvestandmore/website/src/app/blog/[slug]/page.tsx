@@ -28,8 +28,7 @@ export async function generateMetadata({
 export const revalidate = 3600;
 
 export async function generateStaticParams() {
-  const posts = await getBlogPosts();
-  return posts.map((p) => ({ slug: p.slug }));
+  return [];
 }
 
 function formatDate(iso: string) {
