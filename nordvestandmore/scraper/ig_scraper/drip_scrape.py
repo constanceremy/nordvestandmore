@@ -624,7 +624,8 @@ def run_scrape(batch_size: int, force: bool = False):
 
             # If 0 posts while authenticated, retry once after a pause
             # (Instagram sometimes silently returns empty on soft rate limits)
-            if posts == 0 and not stats.get("error") and ig_mod._logged_in:
+            # Skip retry if profile_total is "?" — means profile failed to load (deleted/renamed)
+            if posts == 0 and not stats.get("error") and ig_mod._logged_in and profile_total != "?":
                 print(f"  🔄 0/{profile_total} posts — retrying in 30s...")
                 time_in_retries += 30
                 time.sleep(30)
