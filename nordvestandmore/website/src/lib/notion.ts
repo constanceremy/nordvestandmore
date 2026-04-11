@@ -473,6 +473,7 @@ export async function getLocations(): Promise<LocationItem[]> {
     const response = await notion.databases.query({
       database_id: dbId,
       page_size: 100,
+      filter: { property: "Published Location", checkbox: { equals: true } },
       sorts: [{ property: "Name", direction: "ascending" }],
       ...(cursor ? { start_cursor: cursor } : {}),
     });
