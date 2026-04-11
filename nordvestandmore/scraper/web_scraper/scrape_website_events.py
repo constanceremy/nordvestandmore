@@ -3575,6 +3575,11 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
                 log(f"    ⬇️  Lower priority — enriching existing entry: {dupe.get('name')}")
             else:
                 # Website is upgrading an existing FB/IG entry — use the website link
+                # Carry over IG-specific fields from the existing entry so they aren't lost
+                if not ev.get("ig_handle") and dupe.get("ig_handle"):
+                    ev["ig_handle"] = dupe["ig_handle"]
+                if not ev.get("to_tag") and dupe.get("to_tag"):
+                    ev["to_tag"] = dupe["to_tag"]
                 ev["duplicate_of"] = f"Also at: {dupe_src} ({dupe_date})"
                 log(f"    🔀 Cross-platform match — upgrading existing entry: {dupe.get('name')}")
             ev["possible_duplicate"] = False

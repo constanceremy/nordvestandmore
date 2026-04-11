@@ -530,6 +530,10 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
             start_time = time_parts[0]["text"]["content"] if time_parts else ""
             ms_tags = props.get("Tags", {}).get("multi_select", [])
             existing_tag = ms_tags[0]["name"] if ms_tags else (props.get("Tags", {}).get("select") or {}).get("name", "")
+            ig_handle_parts = props.get("Instagramhandle", {}).get("rich_text", [])
+            ig_handle = ig_handle_parts[0]["text"]["content"] if ig_handle_parts else ""
+            to_tag_parts = props.get("To tag", {}).get("rich_text", [])
+            to_tag = to_tag_parts[0]["text"]["content"] if to_tag_parts else ""
             # Dedup key: URL + date + time + compressed location.
             # Including time and location lets multiple events from the same IG post
             # on the same day (even same time but different venue) get distinct keys.
@@ -546,6 +550,8 @@ def notion_existing_entries() -> tuple[dict[str, str], list[dict]]:
                 "location": location,
                 "start_time": start_time,
                 "tag": existing_tag,
+                "ig_handle": ig_handle,
+                "to_tag": to_tag,
             })
         pages_fetched += 1
         if not data.get("has_more"):

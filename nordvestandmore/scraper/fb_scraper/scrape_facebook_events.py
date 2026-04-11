@@ -1402,6 +1402,11 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                     log(f"    ⬇️  Lower priority — enriching existing entry: {existing_name}")
                 else:
                     # Current (FB) is higher or equal priority — upgrade existing entry's link/data
+                    # Carry over IG-specific fields from the existing entry so they aren't lost
+                    if not ev.get("ig_handle") and dupe.get("ig_handle"):
+                        ev["ig_handle"] = dupe["ig_handle"]
+                    if not ev.get("to_tag") and dupe.get("to_tag"):
+                        ev["to_tag"] = dupe["to_tag"]
                     ev["duplicate_of"] = f"Also at: {dupe_src} ({dupe_date})"
                     log(f"    🔀 Cross-platform match — upgrading existing entry: {dupe.get('name')}")
                 ev["possible_duplicate"] = False
