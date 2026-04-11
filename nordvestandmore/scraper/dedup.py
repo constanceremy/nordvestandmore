@@ -223,10 +223,17 @@ def similarity(a: str, b: str) -> float:
         shorter, longer = (ca, cb) if len(ca) <= len(cb) else (cb, ca)
         if shorter in longer:
             containment = len(shorter) / len(longer)
-            # If the shorter string is a significant portion of the longer one,
-            # treat as high similarity
             if containment >= 0.4:
+                # Shorter string is a significant portion of the longer one
                 containment = max(containment, 0.85)
+            elif len(shorter) >= 8 and longer.startswith(shorter):
+                # Shorter name is a clear prefix of the longer name
+                # e.g. "Yoga'n'Sushi" → "yogansushi" is a prefix of
+                # "yogansushisocialdiningnorxsticksnsushi"
+                containment = 0.90
+            elif len(shorter) >= 8 and containment >= 0.2:
+                # Meaningful substring but not dominant — partial boost
+                containment = max(containment, 0.80)
 
     # Strategy 3: character trigram Jaccard (handles word-form variations like
     # "kaoskomplottet" vs "kaoskomplottets")
@@ -351,8 +358,8 @@ def find_duplicate(
                     borderline_candidates.append(entry)
             continue
 
-        # Catch-all: very high name similarity alone is enough
-        if name_sim >= 0.90:
+        # Catch-all: high name similarity alone is enough
+        if name_sim >= 0.85:
             return entry
 
         # Otherwise must match on source OR location
@@ -370,6 +377,10 @@ def find_duplicate(
             loc_sim = similarity(event_location, entry.get("location", ""))
             if loc_sim >= LOCATION_SIM_THRESHOLD:
                 return entry
+
+        # Name sim is 0.70-0.85 and source/location didn't confirm — ask Gemini
+        if gemini_fn:
+            borderline_candidates.append(entry)
 
     # ── Rule C: ask Gemini about borderline candidates ──
     if gemini_fn and borderline_candidates:
