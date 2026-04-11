@@ -28,6 +28,7 @@ follow these rules:
 """
 import csv
 import io
+import math
 import os
 import re
 from pathlib import Path
@@ -82,6 +83,19 @@ def _load_csv_rows() -> list[dict]:
 
     _cached_rows = rows
     return rows
+
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Return distance in metres between two lat/lng points."""
+    R = 6_371_000
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+# Two locations are considered the same venue if within this distance (metres).
+SAME_VENUE_RADIUS_M = 150
 
 # Similarity threshold (0-1). Events above this are flagged as duplicates.
 SIMILARITY_THRESHOLD = 0.70
@@ -298,6 +312,7 @@ def find_duplicate(
     event_location: str = "",
     event_time: str = "",
     gemini_fn=None,
+    resolve_coords_fn=None,
 ) -> dict | None:
     """
     Check if this event likely duplicates an existing Notion entry.
@@ -305,9 +320,9 @@ def find_duplicate(
     Rules (any match = duplicate):
       A. Same date + similar name (≥70%) + one of:
          - Source similarity >= 85% (or sources related via mapping)
-         - Location similarity >= 85%
-         - Name similarity >= 90% (catch-all)
-      B. Same date + same time + same location (≥85%) — regardless of name
+         - Location similarity >= 85% (text) OR within 150 m (lat/lng)
+         - Name similarity >= 85% (catch-all)
+      B. Same date + same time + same location (≥85% text OR within 150 m) — regardless of name
       C. [if gemini_fn provided] Same date + borderline name similarity (40–70%) +
          related source or similar location → ask Gemini to confirm
 
@@ -321,6 +336,8 @@ def find_duplicate(
         event_time: Start time (HH:MM) of the new event
         gemini_fn: Optional callable(ev_a: dict, ev_b: dict) -> bool | None
                    Called for borderline similarity cases. Returns True if duplicate.
+        resolve_coords_fn: Optional callable(location_text: str) -> (lat, lng) | None
+                   Resolves a location string to coordinates via the Locations DB.
 
     Returns:
         The matching existing entry dict if a likely duplicate is found, else None.
@@ -330,6 +347,22 @@ def find_duplicate(
 
     SOURCE_SIM_THRESHOLD = 0.85
     LOCATION_SIM_THRESHOLD = 0.85
+
+    def _locations_near(loc_a: str, loc_b: str) -> bool:
+        """Return True if both locations resolve to coordinates within SAME_VENUE_RADIUS_M."""
+        if not resolve_coords_fn or not loc_a or not loc_b:
+            return False
+        coords_a = resolve_coords_fn(loc_a)
+        coords_b = resolve_coords_fn(loc_b)
+        if coords_a and coords_b:
+            return _haversine_m(coords_a[0], coords_a[1], coords_b[0], coords_b[1]) <= SAME_VENUE_RADIUS_M
+        return False
+
+    def _location_match(loc_a: str, loc_b: str) -> bool:
+        """Text similarity ≥ threshold OR within SAME_VENUE_RADIUS_M."""
+        if not loc_a or not loc_b:
+            return False
+        return similarity(loc_a, loc_b) >= LOCATION_SIM_THRESHOLD or _locations_near(loc_a, loc_b)
 
     borderline_candidates: list[dict] = []
 
@@ -343,8 +376,7 @@ def find_duplicate(
         entry_time = (entry.get("start_time") or "").strip()
         if (event_time and entry_time and event_time == entry_time
                 and event_location and entry.get("location")):
-            loc_sim = similarity(event_location, entry.get("location", ""))
-            if loc_sim >= LOCATION_SIM_THRESHOLD:
+            if _location_match(event_location, entry.get("location", "")):
                 return entry
 
         # ── Rule A: same date + similar name + source/location/name catch-all ──
@@ -354,7 +386,8 @@ def find_duplicate(
             if gemini_fn and name_sim >= _BORDERLINE_LOW:
                 src_related = are_sources_related(event_source, entry.get("source", ""), mapping)
                 loc_sim = similarity(event_location, entry.get("location", "")) if (event_location and entry.get("location")) else 0.0
-                if src_related or loc_sim >= 0.70:
+                loc_near = _locations_near(event_location, entry.get("location", ""))
+                if src_related or loc_sim >= 0.70 or loc_near:
                     borderline_candidates.append(entry)
             continue
 
@@ -372,11 +405,9 @@ def find_duplicate(
         if source_match:
             return entry
 
-        # Check location similarity
-        if event_location and entry.get("location"):
-            loc_sim = similarity(event_location, entry.get("location", ""))
-            if loc_sim >= LOCATION_SIM_THRESHOLD:
-                return entry
+        # Check location (text similarity or proximity)
+        if _location_match(event_location, entry.get("location", "")):
+            return entry
 
         # Name sim is 0.70-0.85 and source/location didn't confirm — ask Gemini
         if gemini_fn:

@@ -32,7 +32,7 @@ from dedup import load_source_mapping, find_duplicate, similarity, are_sources_r
 from auto_tag import classify_event, is_not_event, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
 from fix_locations import clean_location
-from locations_cache import find_location_id
+from locations_cache import find_location_id, find_location_coords
 
 # ────────────────── Config ──────────────────
 
@@ -3524,6 +3524,7 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
                 event_location=ev.get("location", ""),
                 event_time=ev.get("start_time", "") or ev.get("start_time_disp", ""),
                 gemini_fn=make_gemini_dedup_fn(get_gemini_client()),
+                resolve_coords_fn=lambda loc: find_location_coords(loc, NOTION_TOKEN),
             )
 
         # Deduplicate by URL + date + time (same page can have multiple time slots per day)

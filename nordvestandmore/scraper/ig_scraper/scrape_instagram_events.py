@@ -39,7 +39,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from dedup import load_source_mapping, find_duplicate, similarity, are_sources_related, get_source_priority
 from auto_tag import classify_event, classify_seasonal, is_not_event, is_deal, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
-from locations_cache import find_location_id
+from locations_cache import find_location_id, find_location_coords
 from deals_db import push_to_deals_db
 from fix_locations import clean_location
 
@@ -948,6 +948,7 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 event_location=ev.get("location", ""),
                 event_time=ev.get("start_time", ""),
                 gemini_fn=make_gemini_dedup_fn(client),
+                resolve_coords_fn=lambda loc: find_location_coords(loc, NOTION_TOKEN),
             )
 
             dedup_key = make_dedup_key(ev)

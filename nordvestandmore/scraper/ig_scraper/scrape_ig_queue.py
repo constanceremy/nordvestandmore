@@ -28,6 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import scrape_instagram_events as ig
+from locations_cache import find_location_coords
 
 NOTION_USER_ID = "9d4906be-31d9-401a-82f4-d69e39a08865"  # Constance Remy
 IG_POST_RE = re.compile(r"instagram\.com/p/([A-Za-z0-9_-]+)")
@@ -171,11 +172,11 @@ def process_queue(L, client, existing, all_entries, source_mapping, tmp_dir):
                 ig.notion_update(page_id, ev)
                 # Set tag separately — notion_update skips it to preserve manual edits,
                 # but stubs are new and have no tag yet
-                if ev.get("tag"):
+                if ev.get("tags_list"):
                     requests.patch(
                         f"{ig.NOTION_API}/pages/{page_id}",
                         headers=ig.NOTION_HEADERS,
-                        json={"properties": {"Tags": {"select": {"name": ev["tag"]}}}},
+                        json={"properties": {"Tags": {"multi_select": [{"name": t} for t in ev["tags_list"]]}}},
                         timeout=30,
                     )
                 key = ig.make_dedup_key(ev)
@@ -205,21 +206,59 @@ def process_queue(L, client, existing, all_entries, source_mapping, tmp_dir):
         else:
             # notion_create was never called = event already existed in Notion via dedup.
             # Fill the stub in place with the first event's data so the row is complete,
-            # then mark scraped. No new row is created.
+            # set Possible Duplicate so it's visually flagged, then mark scraped.
+            # No new row is created.
             print(f"  ✏️  Event already in Notion — filling stub in place and marking done")
-            # Find the original entry name to note in "Duplicate of"
+
+            # Find the original entry: try URL-based key first, then cross-platform
             dedup_key = ig.make_dedup_key(events[0])
             original_page_id = existing.get(dedup_key)
+
+            if not original_page_id:
+                # Cross-platform: event may exist from a different source (website, FB)
+                xdupe = ig.find_duplicate(
+                    events[0].get("event_name", ""),
+                    events[0].get("start_date", ""),
+                    account,
+                    all_entries,
+                    source_mapping,
+                    events[0].get("location", ""),
+                    events[0].get("start_time", ""),
+                    resolve_coords_fn=lambda loc: find_location_coords(loc, ig.NOTION_TOKEN),
+                )
+                if xdupe:
+                    original_page_id = xdupe.get("page_id")
+
             if original_page_id:
                 original = next((e for e in all_entries if e.get("page_id") == original_page_id), None)
                 original_name = original.get("name", "") if original else ""
                 events[0]["duplicate_of"] = f"Duplicate of: {original_name or original_page_id}"
+
+            # Compute tags if not already set (events[0] is raw Gemini output)
+            if "tags_list" not in events[0]:
+                from auto_tag import classify_event, classify_seasonal
+                _primary = classify_event(
+                    events[0].get("event_name", ""),
+                    events[0].get("description", ""),
+                    account,
+                )
+                _seasonal = classify_seasonal(events[0].get("event_name", ""), events[0].get("description", ""))
+                events[0]["tags_list"] = ([_primary] if _primary else []) + [s for s in _seasonal if s != _primary]
+
             ig.notion_update(page_id, events[0])
-            if events[0].get("tag"):
+
+            # Set Possible Duplicate checkbox so the row is visually flagged in Notion
+            requests.patch(
+                f"{ig.NOTION_API}/pages/{page_id}",
+                headers=ig.NOTION_HEADERS,
+                json={"properties": {"Possible Duplicate": {"checkbox": True}}},
+                timeout=30,
+            )
+            if events[0].get("tags_list"):
                 requests.patch(
                     f"{ig.NOTION_API}/pages/{page_id}",
                     headers=ig.NOTION_HEADERS,
-                    json={"properties": {"Tags": {"select": {"name": events[0]["tag"]}}}},
+                    json={"properties": {"Tags": {"multi_select": [{"name": t} for t in events[0]["tags_list"]]}}},
                     timeout=30,
                 )
             mark_scraped(page_id)

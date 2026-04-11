@@ -32,7 +32,7 @@ from auto_tag import classify_event, classify_seasonal, is_not_event, is_deal, s
 from hours_db import push_to_hours_db
 from deals_db import push_to_deals_db
 from fix_locations import clean_location
-from locations_cache import find_location_id
+from locations_cache import find_location_id, find_location_coords
 
 # -------------------- CONFIG --------------------
 SLUG = "FACEBOOK"
@@ -1341,6 +1341,7 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                 event_location=ev.get("location", ""),
                 event_time=ev.get("start_time", ""),
                 gemini_fn=make_gemini_dedup_fn(client),
+                resolve_coords_fn=lambda loc: find_location_coords(loc, NOTION_TOKEN),
             )
 
             dedup_key = make_dedup_key(ev)
