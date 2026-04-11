@@ -3227,6 +3227,10 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             props["To tag"] = {"rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]}
         if ev.get("duplicate_of"):
             props["Duplicate of"] = {"rich_text": [{"text": {"content": ev["duplicate_of"][:2000]}}]}
+        if ev.get("location"):
+            loc_id = find_location_id(ev["location"], NOTION_TOKEN)
+            if loc_id:
+                props["Locations"] = {"relation": [{"id": loc_id}]}
         return props
 
     props = {}
@@ -3255,12 +3259,13 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             "rich_text": [{"text": {"content": ev["end_time_disp"]}}]
         }
 
-    # Location — only set on create, preserve manual edits on update
+    # Location text — only set on create, preserve manual edits on update
     if ev.get("location") and not is_update:
         props["Location"] = {
             "rich_text": [{"text": {"content": ev["location"][:2000]}}]
         }
-        # Auto-link Locations relation if name matches a DB entry
+    # Locations relation — always set when resolvable (derived data, not user-editable)
+    if ev.get("location"):
         loc_id = find_location_id(ev["location"], NOTION_TOKEN)
         if loc_id:
             props["Locations"] = {"relation": [{"id": loc_id}]}
