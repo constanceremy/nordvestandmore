@@ -95,7 +95,7 @@ def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 
 
 # Two locations are considered the same venue if within this distance (metres).
-SAME_VENUE_RADIUS_M = 150
+SAME_VENUE_RADIUS_M = 100
 
 # Similarity threshold (0-1). Events above this are flagged as duplicates.
 SIMILARITY_THRESHOLD = 0.70
