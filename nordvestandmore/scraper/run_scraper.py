@@ -429,6 +429,20 @@ def main():
     if has_fb:
         fb_to_ig = fb_mod.load_fb_to_ig_map()
 
+    # ── Process manually-queued FB events (shared from Facebook app to Notion) ──
+    if has_fb:
+        try:
+            sys.path.insert(0, str(ROOT / "fb_scraper"))
+            import scrape_fb_queue as fb_queue
+            gemini_api_key = os.environ.get("GEMINI_API_KEY", "")
+            fb_client = None
+            if gemini_api_key:
+                from google import genai as _genai
+                fb_client = _genai.Client(api_key=gemini_api_key)
+            fb_queue.process_queue(fb_client, ig_existing, all_entries, source_mapping)
+        except Exception as e:
+            log(f"⚠️  FB queue processing failed: {e}")
+
     tmp_dir = tempfile.mkdtemp(prefix="scraper_") if has_ig else None
 
     # Track FB URLs already scraped (avoid re-scraping shared pages like Gamma/Gamma Brewing)
