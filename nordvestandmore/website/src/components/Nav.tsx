@@ -11,9 +11,9 @@ const SearchModal = dynamic(() => import("@/components/SearchModal"), { ssr: fal
 
 const links = [
   { href: "/events", label: "Events" },
-  { href: "/with-us", label: "With us" },
   { href: "/guide", label: "Guide" },
   { href: "/blog", label: "Blog" },
+  { href: "/with-us", label: "Our events" },
   { href: "/about", label: "About" },
 ];
 
