@@ -29,6 +29,7 @@ import re
 import smtplib
 import sys
 import tempfile
+import urllib.parse
 from datetime import date, datetime
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -707,8 +708,9 @@ def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], targe
         cl.set_settings({"cookies": cookies})
         cl.username = IG_USERNAME
 
-        # Resolve numeric user ID via instagrapi's username lookup (no model issues)
-        own_user_id = cl.user_id_from_username(IG_USERNAME)
+        # Extract user_id from sessionid — format is "USER_ID%3Ahash%3A..."
+        # This avoids any API call (and potential rate-limiting) for the ID lookup
+        own_user_id = int(urllib.parse.unquote(sessionid).split(":")[0])
         cl.user_id  = own_user_id
         print(f"📲 Instagram DM → {IG_USERNAME} (uid={own_user_id})")
 
