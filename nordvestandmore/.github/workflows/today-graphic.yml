@@ -1,0 +1,57 @@
+name: Today in Nordvest Graphic
+
+on:
+  schedule:
+    # 05:00 UTC = 07:00 Copenhagen (CEST, summer). In winter (CET) this is 06:00 — still fine.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Date to generate for (YYYY-MM-DD, default: today)"
+        type: string
+        default: ""
+      dry_run:
+        description: "Dry run — generate image but don't send to ntfy"
+        type: boolean
+        default: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pillow requests
+
+      - name: Generate and send graphic
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.date }}" ]; then
+            ARGS="$ARGS --date ${{ inputs.date }}"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python3 nordvestandmore/scraper/today_graphic.py $ARGS
+
+      - name: Upload image artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: today-graphic-${{ github.run_id }}
+          path: /tmp/today_nordvest_*.png
+          retention-days: 7
+          if-no-files-found: ignore
