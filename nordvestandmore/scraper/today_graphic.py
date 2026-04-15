@@ -2,25 +2,29 @@
 """
 today_graphic.py — Generate daily "Today in Nordvest" Instagram Story graphic.
 
-Layout (1080×1920, black & white grid aesthetic):
-  - Header (black bar): "TODAY IN NORDVEST" + date
-  - Body (white, graph-paper texture): event list with 1px separators
-  - Footer (black bar): "NV & MORE" + timestamp
+Layout (1080×1920, white minimal aesthetic matching website):
+  - Header:  "NV & MORE" + date label row  →  "Today in Nordvest" (Helvetica Neue Light)  →  1px black border-b
+  - CTA strip (last slide only): "ALL EVENT DETAILS" (bold) + "nordvestandmore.com" (gray) + drawn arrow
+  - Body: event list — meta line (TAG · TIME, gray) + name (mixed case, light) + gray dividers
+  - Footer: 1px black border-t  +  "NORDVEST · COPENHAGEN" (gray, tracked)
 
-Sends two ntfy messages:
-  1. The image (for Instagram Story)
-  2. Tags-only text, one per line (for copy-paste as IG caption)
+Multi-slide: if events don't fit at minimum font size, they are split across multiple slides.
+CTA appears only on the last slide. All slides share the same header/footer.
+
+Sends via ntfy:
+  1. Each slide image in order (PUT binary)
+  2. IG caption bullets (POST text, for copy-paste)
 
 Usage:
     python3 today_graphic.py
-    python3 today_graphic.py --date 2026-04-16   # override date for testing
-    python3 today_graphic.py --dry-run            # generate image only, don't send
+    python3 today_graphic.py --date 2026-04-16
+    python3 today_graphic.py --dry-run
 """
 import argparse
 import io
 import os
+import re
 import sys
-import tempfile
 from datetime import date, datetime
 from pathlib import Path
 
@@ -33,108 +37,293 @@ NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
 NOTION_DB    = os.environ.get("NOTION_DATABASE_ID", "")
 NTFY_TOPIC   = os.environ.get("NTFY_TOPIC", "")
 
-W, H = 1080, 1920          # Instagram Story dimensions
+W, H = 1080, 1920
 
-# Colour palette
-BLACK      = (0, 0, 0)
-WHITE      = (255, 255, 255)
-LIGHT_GRAY = (230, 230, 230)   # graph-paper lines
-MID_GRAY   = (160, 160, 160)   # secondary text
-DARK_GRAY  = (80, 80, 80)      # tertiary text
+# Colours — matches website globals.css
+BLACK     = (10, 10, 10)
+WHITE     = (255, 255, 255)
+BORDER    = (0, 0, 0)
+META_GRAY = (130, 130, 130)
+MID_GRAY  = META_GRAY
+DIV_GRAY  = (210, 210, 210)
 
-HEADER_H = int(H * 0.18)       # top 18 %
-FOOTER_H = int(H * 0.08)       # bottom 8 %
-BODY_H   = H - HEADER_H - FOOTER_H
+# Layout
+HEADER_H   = int(H * 0.20)   # 384px
+FOOTER_H   = int(H * 0.07)   # 134px
+CTA_H      = 120              # strip reserved for CTA (between header border and first event)
+BODY_TOP   = HEADER_H + CTA_H
+BODY_H     = H - BODY_TOP - FOOTER_H   # available for events: ~1282px
 
-PADDING  = 60                  # horizontal margin
+PADDING    = 64
+LINK_SPACE = 320   # px to the right of CTA text for link sticker
+
+# Event typography
+EVENT_FONT_MAX = 28
+EVENT_FONT_MIN = 22
+EVENT_GAP      = 36   # vertical gap between events
+META_GAP       = 8    # gap between meta line and event name
+
 
 # ── Font loading ──────────────────────────────────────────────────────────────
 
-def _find_font(name: str) -> str | None:
-    """Search common system font paths for a font file by name fragment."""
+def _find_weighted_font(weight_keywords: list[str], exclude: list[str] | None = None) -> str | None:
+    """Search system font dirs for a font whose filename contains any weight keyword."""
+    exclude = exclude or []
     search_dirs = [
-        "/usr/share/fonts",
-        "/usr/local/share/fonts",
+        "/usr/share/fonts", "/usr/local/share/fonts",
         str(Path.home() / ".fonts"),
-        "/System/Library/Fonts",         # macOS
-        "/Library/Fonts",                # macOS
+        "/System/Library/Fonts", "/Library/Fonts",
+        str(Path.home() / "Library/Fonts"),
     ]
     for d in search_dirs:
-        for p in Path(d).rglob("*.ttf") if Path(d).exists() else []:
-            if name.lower() in p.name.lower():
+        root = Path(d)
+        if not root.exists():
+            continue
+        for p in root.rglob("*"):
+            if p.suffix.lower() not in (".ttf", ".otf", ".ttc"):
+                continue
+            fname = p.name.lower()
+            if any(ex in fname for ex in exclude):
+                continue
+            if any(kw in fname for kw in weight_keywords):
                 return str(p)
     return None
 
 
-def _load_fonts():
-    """Return a dict of PIL ImageFont objects at various sizes."""
-    # Prefer Liberation Sans (usually available on Ubuntu runners)
-    # Fall back to DejaVu Sans, then Pillow's default bitmap font
-    candidates = [
-        ("LiberationSans-Bold",    "bold"),
-        ("LiberationSans-Regular", "regular"),
-        ("DejaVuSans-Bold",        "bold"),
-        ("DejaVuSans",             "regular"),
-    ]
-    bold_path    = None
-    regular_path = None
-    for name, kind in candidates:
-        path = _find_font(name)
-        if path:
-            if kind == "bold" and bold_path is None:
-                bold_path = path
-            elif kind == "regular" and regular_path is None:
-                regular_path = path
-        if bold_path and regular_path:
-            break
+def _find_light_spec() -> str | None:
+    """Return path:index for Helvetica Neue Light on macOS, else any light/thin font."""
+    mac_ttc = "/System/Library/Fonts/HelveticaNeue.ttc"
+    if Path(mac_ttc).exists():
+        try:
+            f = ImageFont.truetype(mac_ttc, 40, index=7)
+            if "Light" in f.getname()[1]:
+                return f"{mac_ttc}:7"
+        except Exception:
+            pass
+    path = _find_weighted_font(["light", "thin"], exclude=["italic", "oblique"])
+    return path
 
-    def _f(path, size):
-        if path:
+
+def _find_bold_spec() -> str | None:
+    """Return path:index for Helvetica Neue Bold on macOS, else any bold font."""
+    mac_ttc = "/System/Library/Fonts/HelveticaNeue.ttc"
+    if Path(mac_ttc).exists():
+        try:
+            f = ImageFont.truetype(mac_ttc, 40, index=1)
+            name = f.getname()[1]
+            if "Bold" in name and "Italic" not in name:
+                return f"{mac_ttc}:1"
+        except Exception:
+            pass
+    path = _find_weighted_font(["bold", "-bd", "b.ttf"], exclude=["italic", "oblique"])
+    return path
+
+
+def _find_regular_spec() -> str | None:
+    """Return path for a regular (non-bold, non-italic) font."""
+    mac_ttc = "/System/Library/Fonts/HelveticaNeue.ttc"
+    if Path(mac_ttc).exists():
+        return f"{mac_ttc}:0"
+    path = _find_weighted_font(
+        ["liberationsans-regular", "arial.ttf", "arial-regular",
+         "dejavusans.ttf", "helveticaneue.ttc", "notosans-regular"],
+        exclude=["bold", "italic", "oblique"],
+    )
+    if not path:
+        # Download Inter as fallback
+        url  = "https://github.com/google/fonts/raw/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf"
+        dest = "/tmp/nv_inter_var.ttf"
+        if not Path(dest).exists():
             try:
-                return ImageFont.truetype(path, size)
-            except Exception:
-                pass
-        return ImageFont.load_default()
+                import urllib.request
+                print("⬇️  Downloading Inter font…")
+                urllib.request.urlretrieve(url, dest)
+            except Exception as e:
+                print(f"⚠️  Font download failed: {e}")
+                return None
+        return dest
+    return path
 
-    return {
-        "header_title": _f(bold_path,    96),
-        "header_date":  _f(regular_path, 44),
-        "event_name":   _f(bold_path,    52),
-        "event_meta":   _f(regular_path, 38),
-        "event_tags":   _f(regular_path, 32),
-        "footer":       _f(regular_path, 34),
-        "no_events":    _f(regular_path, 52),
-    }
+
+def _load_spec(spec: str | None, size: int) -> ImageFont.FreeTypeFont:
+    """Load a font from 'path:index' or 'path', fallback to default."""
+    if not spec:
+        return ImageFont.load_default(size)
+    if ":" in spec:
+        path, idx = spec.rsplit(":", 1)
+        try:
+            return ImageFont.truetype(path, size, index=int(idx))
+        except Exception:
+            pass
+    try:
+        return ImageFont.truetype(spec, size)
+    except Exception:
+        return ImageFont.load_default(size)
+
+
+def _load_fonts() -> dict:
+    light  = _find_light_spec()
+    bold   = _find_bold_spec()
+    reg    = _find_regular_spec()
+    print(f"🔤 Light:   {light  or '(fallback)'}")
+    print(f"🔤 Bold:    {bold   or '(fallback)'}")
+    print(f"🔤 Regular: {reg    or '(fallback)'}")
+    return {"light": light, "bold": bold, "reg": reg}
+
+
+# ── Drawing helpers ───────────────────────────────────────────────────────────
+
+def _tracked_width(draw: ImageDraw, text: str, font: ImageFont, tracking: int = 0) -> int:
+    total = 0
+    for ch in text:
+        bb = draw.textbbox((0, 0), ch, font=font)
+        total += (bb[2] - bb[0]) + tracking
+    return max(total - tracking, 0)
+
+
+def _draw_tracked(draw: ImageDraw, xy: tuple, text: str, font: ImageFont,
+                  fill, tracking: int = 0) -> int:
+    """Draw letter-spaced text. Returns final x position."""
+    x, y = xy
+    for ch in text:
+        draw.text((x, y), ch, font=font, fill=fill)
+        bb = draw.textbbox((0, 0), ch, font=font)
+        x += (bb[2] - bb[0]) + tracking
+    return x
+
+
+def _font_height(draw: ImageDraw, font: ImageFont) -> int:
+    bb = draw.textbbox((0, 0), "A", font=font)
+    return bb[3] - bb[1]
+
+
+def _wrap_lines(draw: ImageDraw, text: str, font: ImageFont,
+                max_w: int, tracking: int = 0) -> list[str]:
+    words = text.split()
+    lines, cur = [], []
+    for w in words:
+        candidate = " ".join(cur + [w])
+        if _tracked_width(draw, candidate, font, tracking) <= max_w:
+            cur.append(w)
+        else:
+            if cur:
+                lines.append(" ".join(cur))
+            cur = [w]
+    if cur:
+        lines.append(" ".join(cur))
+    return lines or [text]
+
+
+def _draw_arrow(draw: ImageDraw, cx: int, cy: int, size: int,
+                color, lw: int = 3):
+    """Draw a → arrow centred at (cx, cy). size = half-length of shaft."""
+    draw.line([(cx - size, cy), (cx + size, cy)], fill=color, width=lw)
+    tip = size // 2
+    draw.line([(cx + size, cy), (cx + size - tip, cy - tip)], fill=color, width=lw)
+    draw.line([(cx + size, cy), (cx + size - tip, cy + tip)], fill=color, width=lw)
+
+
+# ── Slide splitting ───────────────────────────────────────────────────────────
+
+def _measure_events_height(events: list[dict], font_name: ImageFont,
+                            font_meta: ImageFont, draw: ImageDraw,
+                            max_w: int) -> int:
+    """Return the pixel height needed to render a list of events."""
+    name_h = _font_height(draw, font_name)
+    meta_h = _font_height(draw, font_meta)
+    total  = EVENT_GAP  # top padding before first event
+
+    for i, ev in enumerate(events):
+        if i > 0:
+            total += EVENT_GAP  # gap + divider between events
+
+        # Meta line
+        total += meta_h + META_GAP
+
+        # Name (word-wrapped)
+        lines  = _wrap_lines(draw, ev["name"], font_name, max_w, 1)
+        total += len(lines) * name_h + (len(lines) - 1) * 2
+
+    return total
+
+
+def _split_into_slides(events: list[dict], fonts: dict) -> list[list[dict]]:
+    """
+    Greedily split events into slides.
+    Each slide uses EVENT_FONT_MAX for its events.
+    If a chunk overflows BODY_H we shrink the chunk until it fits.
+    """
+    if not events:
+        return [[]]
+
+    tmp  = Image.new("RGB", (W, H))
+    d    = ImageDraw.Draw(tmp)
+    fnom = _load_spec(fonts["reg"],   EVENT_FONT_MAX)
+    fmet = _load_spec(fonts["reg"],   18)
+    max_w = W - PADDING * 2
+
+    slides    = []
+    remaining = list(events)
+
+    while remaining:
+        chunk = []
+        for ev in remaining:
+            candidate = chunk + [ev]
+            if _measure_events_height(candidate, fnom, fmet, d, max_w) <= BODY_H:
+                chunk = candidate
+            else:
+                break
+        if not chunk:
+            # Single event overflows (very long name) — force it onto its own slide
+            chunk = [remaining[0]]
+        slides.append(chunk)
+        remaining = remaining[len(chunk):]
+
+    return slides
 
 
 # ── Notion data fetch ─────────────────────────────────────────────────────────
 
+def _parse_time_minutes(time_str: str) -> int:
+    if not time_str or time_str == "—":
+        return 99 * 60
+    s = time_str.strip().lower()
+    m = re.match(r"(\d{1,2}):(\d{2})\s*(am|pm)?", s)
+    if not m:
+        return 99 * 60
+    h, mn, meridiem = int(m.group(1)), int(m.group(2)), m.group(3)
+    if meridiem == "pm" and h != 12:
+        h += 12
+    elif meridiem == "am" and h == 12:
+        h = 0
+    return h * 60 + mn
+
+
 def fetch_todays_events(target_date: date) -> list[dict]:
-    """Fetch events from Notion for target_date, sorted by start time."""
     if not NOTION_TOKEN or not NOTION_DB:
         print("⚠️  NOTION_TOKEN or NOTION_DATABASE_ID not set — using empty event list")
         return []
 
     date_str = target_date.isoformat()
-    headers = {
+    headers  = {
         "Authorization": f"Bearer {NOTION_TOKEN}",
         "Notion-Version": "2022-06-28",
-        "Content-Type": "application/json",
+        "Content-Type":   "application/json",
     }
     payload = {
         "page_size": 100,
         "filter": {
-            "property": "Start Date",
-            "date": {"equals": date_str},
+            "and": [
+                {"property": "Start Date", "date":     {"equals": date_str}},
+                {"property": "Approved",   "checkbox": {"equals": True}},
+                {"property": "Deleted",    "checkbox": {"equals": False}},
+            ]
         },
-        "sorts": [{"property": "Start Time", "direction": "ascending"}],
     }
     try:
         resp = requests.post(
             f"https://api.notion.com/v1/databases/{NOTION_DB}/query",
-            headers=headers,
-            json=payload,
-            timeout=30,
+            headers=headers, json=payload, timeout=30,
         )
         resp.raise_for_status()
     except Exception as e:
@@ -151,12 +340,14 @@ def fetch_todays_events(target_date: date) -> list[dict]:
             continue
 
         time_parts = p.get("Start Time", {}).get("rich_text", [])
-        time_str = time_parts[0]["text"]["content"] if time_parts else ""
+        time_str   = time_parts[0]["text"]["content"] if time_parts else ""
 
-        loc_parts = p.get("Location", {}).get("rich_text", [])
-        location = loc_parts[0]["text"]["content"] if loc_parts else ""
+        ig_prop    = p.get("IG post", {})
+        ig_caption = (ig_prop.get("formula") or {}).get("string", "").strip()
 
-        # Tag List (multi_select) first, then Tags (select fallback)
+        loc_parts  = p.get("Location", {}).get("rich_text", [])
+        location   = loc_parts[0]["text"]["content"] if loc_parts else ""
+
         tag_list_ms = p.get("Tag List", {}).get("multi_select", [])
         tags = [t["name"] for t in tag_list_ms]
         if not tags:
@@ -166,204 +357,257 @@ def fetch_todays_events(target_date: date) -> list[dict]:
             sel = (p.get("Tags", {}).get("select") or {}).get("name", "")
             tags = [sel] if sel else []
 
+        # Strip leading time prefix from IG caption for graphic display
+        ig_display = ig_caption
+        if ig_display:
+            ig_display = re.sub(
+                r"^•\s*(?:All day|\d{1,2}:\d{2}[ap]m)\s*-\s*", "", ig_display
+            ).strip()
+
         events.append({
-            "name": name,
-            "time": time_str,
-            "location": location,
-            "tags": tags,
+            "name":       ig_display if ig_display else name,
+            "ig_caption": ig_caption,
+            "time":       time_str,
+            "location":   location,
+            "tags":       tags,
+            "_sort_key":  _parse_time_minutes(time_str),
         })
 
+    events.sort(key=lambda e: e["_sort_key"])
     return events
 
 
-# ── Drawing helpers ───────────────────────────────────────────────────────────
+# ── Slide rendering ───────────────────────────────────────────────────────────
 
-def _draw_graph_paper(draw: ImageDraw, x0: int, y0: int, x1: int, y1: int, spacing: int = 48):
-    """Draw a subtle graph-paper grid in the body area."""
-    for x in range(x0, x1, spacing):
-        draw.line([(x, y0), (x, y1)], fill=LIGHT_GRAY, width=1)
-    for y in range(y0, y1, spacing):
-        draw.line([(x0, y), (x1, y)], fill=LIGHT_GRAY, width=1)
+def _render_header(draw: ImageDraw, fonts: dict, target_date: date):
+    """Draw the header on an existing draw surface (shared across all slides)."""
+
+    def _ordinal(n: int) -> str:
+        if 11 <= (n % 100) <= 13:
+            return f"{n}TH"
+        return f"{n}" + {1: "ST", 2: "ND", 3: "RD"}.get(n % 10, "TH")
+
+    # Label row: NV & MORE (left)  ·  date (right)
+    label_fnt      = _load_spec(fonts["reg"], 22)
+    label_tracking = 7
+    label_y        = 48
+
+    day_name   = target_date.strftime("%A").upper()
+    month_name = target_date.strftime("%B").upper()
+    date_label = f"{day_name}  {month_name} {_ordinal(target_date.day)}"
+    dw         = _tracked_width(draw, date_label, label_fnt, label_tracking)
+    _draw_tracked(draw, (PADDING, label_y),            "NV & MORE", label_fnt, META_GRAY, label_tracking)
+    _draw_tracked(draw, (W - PADDING - dw, label_y),   date_label,  label_fnt, META_GRAY, label_tracking)
+
+    # Title: "Today in Nordvest" — Helvetica Neue Light
+    title = "Today in Nordvest"
+    for sz in range(120, 30, -2):
+        fnt_title = _load_spec(fonts["light"], sz)
+        if _tracked_width(draw, title, fnt_title, 1) <= W - PADDING * 2:
+            break
+    _draw_tracked(draw, (PADDING, label_y + 36), title, fnt_title, BLACK, 1)
+
+    # 1px black border-b
+    draw.line([(0, HEADER_H), (W, HEADER_H)], fill=BORDER, width=2)
 
 
-def _text_width(draw: ImageDraw, text: str, font: ImageFont) -> int:
-    bbox = draw.textbbox((0, 0), text, font=font)
-    return bbox[2] - bbox[0]
+def _render_cta(draw: ImageDraw, fonts: dict):
+    """Draw the CTA strip (no rectangle, no border line) — last slide only."""
+    line1_text     = "ALL EVENT DETAILS"
+    line1_fnt      = _load_spec(fonts["bold"], 32)
+    line1_tracking = 5
+
+    line2_text     = "NORDVESTANDMORE.COM"
+    line2_fnt      = _load_spec(fonts["reg"], 20)
+    line2_tracking = 4
+
+    line_gap   = 18
+    arrow_len  = 32
+    arrow_gap  = 20   # gap between right edge of text block and arrow centre
+
+    line1_h = _font_height(draw, line1_fnt)
+    line2_h = _font_height(draw, line2_fnt)
+    line1_w = _tracked_width(draw, line1_text, line1_fnt, line1_tracking)
+    line2_w = _tracked_width(draw, line2_text, line2_fnt, line2_tracking)
+
+    block_h    = line1_h + line_gap + line2_h
+    block_y    = HEADER_H + (CTA_H - block_h) // 2
+    text_right = W - LINK_SPACE   # right edge of text (arrow is further right)
+
+    # Line 1: bold
+    bb1     = draw.textbbox((0, 0), line1_text, font=line1_fnt)
+    text1_y = block_y - bb1[1]
+    _draw_tracked(draw, (text_right - line1_w, text1_y), line1_text, line1_fnt, BLACK, line1_tracking)
+
+    # Line 2: URL in gray
+    bb2     = draw.textbbox((0, 0), line2_text, font=line2_fnt)
+    text2_y = text1_y + line1_h + line_gap - bb2[1]
+    _draw_tracked(draw, (text_right - line2_w, text2_y), line2_text, line2_fnt, META_GRAY, line2_tracking)
+
+    # Arrow: centred between the two lines, to the right of text block
+    arrow_cx = text_right + arrow_gap + arrow_len
+    arrow_cy = block_y + line1_h + line_gap // 2
+    _draw_arrow(draw, arrow_cx, arrow_cy, arrow_len, BLACK, lw=3)
 
 
-def _truncate(draw: ImageDraw, text: str, font: ImageFont, max_width: int) -> str:
-    if _text_width(draw, text, font) <= max_width:
-        return text
-    while text and _text_width(draw, text + "…", font) > max_width:
-        text = text[:-1]
-    return text + "…"
+def _render_footer(draw: ImageDraw, fonts: dict,
+                   slide_num: int, total_slides: int):
+    """Draw the footer."""
+    footer_y = H - FOOTER_H
+    draw.line([(0, footer_y), (W, footer_y)], fill=BORDER, width=2)
+
+    foot_fnt      = _load_spec(fonts["reg"], 22)
+    foot_tracking = 7
+    stamp         = "NORDVEST · COPENHAGEN"
+    fh            = _font_height(draw, foot_fnt)
+    foot_text_y   = footer_y + (FOOTER_H - fh) // 2
+
+    _draw_tracked(draw, (PADDING, foot_text_y), stamp, foot_fnt, META_GRAY, foot_tracking)
+
+    # Multi-slide: show page indicator on the right
+    if total_slides > 1:
+        indicator = f"{slide_num} / {total_slides}"
+        ind_w     = _tracked_width(draw, indicator, foot_fnt, foot_tracking)
+        _draw_tracked(draw, (W - PADDING - ind_w, foot_text_y), indicator, foot_fnt, META_GRAY, foot_tracking)
 
 
-# ── Main render ───────────────────────────────────────────────────────────────
+def _render_events(draw: ImageDraw, events: list[dict], fonts: dict):
+    """Render event rows into the body area."""
+    if not events:
+        fnt = _load_spec(fonts["bold"], 64)
+        msg = "NO EVENTS TODAY"
+        mw  = _tracked_width(draw, msg, fnt, 6)
+        _draw_tracked(draw, ((W - mw) // 2, BODY_TOP + BODY_H // 2 - 40), msg, fnt, MID_GRAY, 6)
+        return
 
-def render(events: list[dict], target_date: date) -> Image.Image:
-    fonts = _load_fonts()
+    font_name = _load_spec(fonts["reg"], EVENT_FONT_MAX)
+    font_meta = _load_spec(fonts["reg"], 18)
+    max_w     = W - PADDING * 2
+    name_h    = _font_height(draw, font_name)
+    meta_h    = _font_height(draw, font_meta)
+
+    y = BODY_TOP + EVENT_GAP
+
+    for i, ev in enumerate(events):
+        if i > 0:
+            draw.line([(PADDING, y - EVENT_GAP // 2), (W - PADDING, y - EVENT_GAP // 2)],
+                      fill=DIV_GRAY, width=1)
+
+        # Meta: TAG  ·  TIME
+        tag_str  = ev["tags"][0].upper() if ev.get("tags") else ""
+        time_str = (ev["time"] or "").upper()
+        meta     = f"{tag_str}  ·  {time_str}" if tag_str and time_str else (tag_str or time_str)
+        if meta:
+            _draw_tracked(draw, (PADDING, y), meta, font_meta, MID_GRAY, 4)
+        y += meta_h + META_GAP
+
+        # Event name (word-wrapped, light weight)
+        lines = _wrap_lines(draw, ev["name"], font_name, max_w, 1)
+        for li, line in enumerate(lines):
+            _draw_tracked(draw, (PADDING, y), line, font_name, BLACK, 1)
+            y += name_h + (2 if li < len(lines) - 1 else 0)
+
+        y += EVENT_GAP
+
+
+def render_slide(events: list[dict], target_date: date, fonts: dict,
+                 show_cta: bool, slide_num: int, total_slides: int) -> Image.Image:
     img  = Image.new("RGB", (W, H), WHITE)
     draw = ImageDraw.Draw(img)
 
-    # ── Header ────────────────────────────────────────────────────────────────
-    draw.rectangle([(0, 0), (W, HEADER_H)], fill=BLACK)
-
-    title = "TODAY IN NORDVEST"
-    tw = _text_width(draw, title, fonts["header_title"])
-    draw.text(((W - tw) // 2, 60), title, font=fonts["header_title"], fill=WHITE)
-
-    day_name = target_date.strftime("%A").upper()
-    day_num  = target_date.day
-    month    = target_date.strftime("%B").upper()
-    year     = target_date.year
-    date_str = f"{day_name}  {day_num} {month} {year}"
-    dw = _text_width(draw, date_str, fonts["header_date"])
-    draw.text(((W - dw) // 2, 178), date_str, font=fonts["header_date"], fill=LIGHT_GRAY)
-
-    # thin white line under header text
-    draw.line([(PADDING, HEADER_H - 2), (W - PADDING, HEADER_H - 2)], fill=WHITE, width=1)
-
-    # ── Body ──────────────────────────────────────────────────────────────────
-    body_y0 = HEADER_H
-    body_y1 = H - FOOTER_H
-    _draw_graph_paper(draw, 0, body_y0, W, body_y1, spacing=48)
-
-    if not events:
-        msg = "No events today"
-        mw = _text_width(draw, msg, fonts["no_events"])
-        draw.text(
-            ((W - mw) // 2, body_y0 + BODY_H // 2 - 30),
-            msg, font=fonts["no_events"], fill=MID_GRAY,
-        )
-    else:
-        n = len(events)
-        # Allocate row height — clamp between 130 and 220 px
-        row_h = max(130, min(220, BODY_H // n))
-        available = BODY_H
-
-        y = body_y0 + 24
-        for i, ev in enumerate(events):
-            row_bottom = y + row_h
-
-            # Separator line at top of each row (except first)
-            if i > 0:
-                draw.line([(PADDING, y), (W - PADDING, y)], fill=BLACK, width=1)
-                y += 12
-
-            # Row number stamp (left margin)
-            num_str = f"{i+1:02d}"
-            draw.text((PADDING, y + 4), num_str, font=fonts["event_tags"], fill=LIGHT_GRAY)
-
-            text_x = PADDING + 68
-            max_w  = W - text_x - PADDING
-
-            # Event name
-            name = _truncate(draw, ev["name"].upper(), fonts["event_name"], max_w)
-            draw.text((text_x, y), name, font=fonts["event_name"], fill=BLACK)
-            y += 58
-
-            # Time + location on one line
-            meta_parts = []
-            if ev["time"]:
-                meta_parts.append(ev["time"])
-            if ev["location"]:
-                meta_parts.append(ev["location"].upper())
-            meta = "  ·  ".join(meta_parts)
-            if meta:
-                meta = _truncate(draw, meta, fonts["event_meta"], max_w)
-                draw.text((text_x, y), meta, font=fonts["event_meta"], fill=DARK_GRAY)
-                y += 46
-
-            # Tags
-            if ev["tags"]:
-                tag_str = "  ".join(f"#{t.replace(' ', '').upper()}" for t in ev["tags"])
-                tag_str = _truncate(draw, tag_str, fonts["event_tags"], max_w)
-                draw.text((text_x, y), tag_str, font=fonts["event_tags"], fill=MID_GRAY)
-                y += 40
-
-            # Pad to row bottom
-            y = max(y + 8, row_bottom)
-
-            if y >= body_y1 - 20:
-                remaining = n - i - 1
-                if remaining:
-                    draw.line([(PADDING, y), (W - PADDING, y)], fill=BLACK, width=1)
-                    more = f"+ {remaining} more event{'s' if remaining > 1 else ''}"
-                    draw.text((text_x, y + 10), more, font=fonts["event_meta"], fill=MID_GRAY)
-                break
-
-    # ── Footer ────────────────────────────────────────────────────────────────
-    footer_y = H - FOOTER_H
-    draw.rectangle([(0, footer_y), (W, H)], fill=BLACK)
-    draw.line([(PADDING, footer_y), (W - PADDING, footer_y)], fill=WHITE, width=1)
-
-    draw.text((PADDING, footer_y + 22), "NV & MORE", font=fonts["footer"], fill=WHITE)
-
-    stamp = f"NV_2400  ·  07:00"
-    sw = _text_width(draw, stamp, fonts["footer"])
-    draw.text((W - PADDING - sw, footer_y + 22), stamp, font=fonts["footer"], fill=MID_GRAY)
+    _render_header(draw, fonts, target_date)
+    if show_cta:
+        _render_cta(draw, fonts)
+    _render_events(draw, events, fonts)
+    _render_footer(draw, fonts, slide_num, total_slides)
 
     return img
 
 
+def render_all(events: list[dict], target_date: date) -> tuple[list[Image.Image], list[list[dict]]]:
+    """Returns (images, slides) — one image and one event-list per slide."""
+    fonts  = _load_fonts()
+    slides = _split_into_slides(events, fonts)
+    total  = len(slides)
+
+    print(f"📊 {len(events)} event(s) → {total} slide(s)")
+
+    images = []
+    for i, chunk in enumerate(slides):
+        slide_num = i + 1
+        print(f"   Slide {slide_num}/{total}: {len(chunk)} event(s)")
+        img = render_slide(chunk, target_date, fonts,
+                           show_cta=True,
+                           slide_num=slide_num,
+                           total_slides=total)
+        images.append(img)
+
+    return images, slides
+
+
 # ── ntfy sending ──────────────────────────────────────────────────────────────
 
-def send_image(img: Image.Image, events: list[dict], target_date: date):
+def _build_caption(slide_events: list[dict]) -> str:
+    """Build IG caption text for one slide's events."""
+    lines = [ev["ig_caption"] for ev in slide_events if ev.get("ig_caption")]
+    if not lines:
+        lines = [
+            f"• {ev['time'] or 'All day'} - {ev['name']}"
+            for ev in slide_events
+        ]
+    return "\n".join(lines)
+
+
+def send_images(images: list[Image.Image], slides: list[list[dict]], target_date: date):
     if not NTFY_TOPIC:
         print("⚠️  NTFY_TOPIC not set — skipping send")
         return
 
-    date_str = target_date.strftime("%A %-d %B")
+    date_str   = target_date.strftime("%A %-d %B")
+    total      = len(images)
+    multi      = total > 1
 
-    # Message 1: the image
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    try:
-        requests.put(
-            f"https://ntfy.sh/{NTFY_TOPIC}",
-            data=buf.read(),
-            headers={
-                "Title":    f"Today in Nordvest — {date_str}",
-                "Filename": f"today_{target_date.isoformat()}.png",
-                "Tags":     "camera,sunrise",
-                "Priority": "default",
-            },
-            timeout=30,
-        )
-        print("✅ Image sent via ntfy")
-    except Exception as e:
-        print(f"⚠️  Failed to send image: {e}")
+    for i, (img, slide_events) in enumerate(zip(images, slides)):
+        slide_num   = i + 1
+        slide_label = f" ({slide_num}/{total})" if multi else ""
 
-    # Message 2: tags-only text for IG caption
-    all_tags = []
-    for ev in events:
-        for t in ev["tags"]:
-            tag = "#" + t.replace(" ", "").lower()
-            if tag not in all_tags:
-                all_tags.append(tag)
+        # Image
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        try:
+            requests.put(
+                f"https://ntfy.sh/{NTFY_TOPIC}",
+                data=buf.read(),
+                headers={
+                    "Title":    f"Today in Nordvest — {date_str}{slide_label}",
+                    "Filename": f"today_{target_date.isoformat()}_{slide_num}.png",
+                    "Tags":     "camera,sunrise",
+                    "Priority": "default",
+                },
+                timeout=30,
+            )
+            print(f"✅ Slide {slide_num} image sent via ntfy")
+        except Exception as e:
+            print(f"⚠️  Failed to send slide {slide_num} image: {e}")
 
-    # Add standard NV & more tags
-    for fixed in ["#nordvest", "#nordvestkøbenhavn", "#nordvestmore", "#copenhagen", "#København"]:
-        if fixed.lower() not in [t.lower() for t in all_tags]:
-            all_tags.append(fixed)
-
-    tags_text = "\n".join(all_tags)
-    try:
-        requests.post(
-            f"https://ntfy.sh/{NTFY_TOPIC}",
-            data=tags_text.encode(),
-            headers={
-                "Title":    f"IG tags — {date_str}",
-                "Tags":     "label",
-                "Priority": "default",
-            },
-            timeout=30,
-        )
-        print("✅ Tags sent via ntfy")
-    except Exception as e:
-        print(f"⚠️  Failed to send tags: {e}")
+        # Caption for this slide
+        caption = _build_caption(slide_events)
+        caption_label = f"IG caption{slide_label} — {date_str}"
+        try:
+            requests.post(
+                f"https://ntfy.sh/{NTFY_TOPIC}",
+                data=caption.encode(),
+                headers={
+                    "Title":    caption_label,
+                    "Tags":     "label",
+                    "Priority": "default",
+                },
+                timeout=30,
+            )
+            print(f"✅ Slide {slide_num} caption sent via ntfy")
+        except Exception as e:
+            print(f"⚠️  Failed to send slide {slide_num} caption: {e}")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -371,8 +615,9 @@ def send_image(img: Image.Image, events: list[dict], target_date: date):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--date",    help="Override date (YYYY-MM-DD)")
-    parser.add_argument("--dry-run", action="store_true", help="Generate image only, don't send")
-    parser.add_argument("--out",     help="Save image to this path instead of temp file")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Generate images only, don't send")
+    parser.add_argument("--out",     help="Save first image to this path")
     args = parser.parse_args()
 
     if args.date:
@@ -387,17 +632,23 @@ def main():
     for ev in events:
         print(f"   • {ev['time'] or '--:--'}  {ev['name']}  [{', '.join(ev['tags'])}]")
 
-    img = render(events, target_date)
+    images, slides = render_all(events, target_date)
 
     if args.out:
-        img.save(args.out)
-        print(f"💾 Saved to {args.out}")
+        images[0].save(args.out)
+        print(f"💾 Saved slide 1 to {args.out}")
+        for i, img in enumerate(images[1:], 2):
+            p = args.out.replace(".png", f"_{i}.png")
+            img.save(p)
+            print(f"💾 Saved slide {i} to {p}")
     elif args.dry_run:
-        out = f"/tmp/today_nordvest_{target_date}.png"
-        img.save(out)
-        print(f"💾 Dry run — saved to {out}")
+        for i, (img, slide_events) in enumerate(zip(images, slides), 1):
+            out = f"/tmp/today_nordvest_{target_date}_{i}.png"
+            img.save(out)
+            print(f"💾 Dry run — saved to {out}")
+            print(f"   Caption preview:\n{_build_caption(slide_events)}\n")
     else:
-        send_image(img, events, target_date)
+        send_images(images, slides, target_date)
 
 
 if __name__ == "__main__":

@@ -2,8 +2,8 @@ name: Today in Nordvest Graphic
 
 on:
   schedule:
-    # 05:00 UTC = 07:00 Copenhagen (CEST, summer). In winter (CET) this is 06:00 — still fine.
-    - cron: "0 5 * * *"
+    # 04:30 UTC = 06:30 Copenhagen (CEST, summer). In winter (CET) this is 05:30 — still fine.
+    - cron: "30 4 * * *"
   workflow_dispatch:
     inputs:
       date:
