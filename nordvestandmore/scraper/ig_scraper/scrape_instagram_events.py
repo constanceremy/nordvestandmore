@@ -97,6 +97,13 @@ class RateLimiter:
 
 gemini_limiter = RateLimiter(max_calls=GEMINI_RPM_LIMIT, period=60.0)
 
+_gemini_client = None
+
+
+def set_gemini_client(client):
+    global _gemini_client
+    _gemini_client = client
+
 
 def make_gemini_dedup_fn(client):
     """Return a gemini_fn callable for find_duplicate() borderline checks."""
@@ -595,7 +602,7 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             if desc:
                 props["Description"] = {"rich_text": [{"text": {"content": desc[:2000]}}]}
         if ev.get("location"):
-            loc_id = find_location_id(ev["location"], NOTION_TOKEN)
+            loc_id = find_location_id(ev["location"], NOTION_TOKEN, _gemini_client)
             if loc_id:
                 props["Locations"] = {"relation": [{"id": loc_id}]}
         return props
@@ -638,7 +645,7 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
         }
     # Locations relation — always set when resolvable (derived data, not user-editable)
     if ev.get("location"):
-        loc_id = find_location_id(ev["location"], NOTION_TOKEN)
+        loc_id = find_location_id(ev["location"], NOTION_TOKEN, _gemini_client)
         if loc_id:
             props["Locations"] = {"relation": [{"id": loc_id}]}
 
@@ -750,6 +757,7 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
     Returns dict: {created, updated, skipped, flagged_dupes, total_events, total_posts,
                    needs_login (True if 0 posts without login), error (True if crashed)}
     """
+    set_gemini_client(client)
     created = updated = skipped = flagged_dupes = total_events = total_posts = 0
 
     try:

@@ -85,6 +85,13 @@ class RateLimiter:
 
 gemini_limiter = RateLimiter(max_calls=GEMINI_RPM_LIMIT, period=60.0)
 
+_gemini_client = None
+
+
+def set_gemini_client(client):
+    global _gemini_client
+    _gemini_client = client
+
 
 def make_gemini_dedup_fn(client):
     """Return a gemini_fn callable for find_duplicate() borderline checks."""
@@ -929,7 +936,7 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             if desc:
                 props["Description"] = {"rich_text": [{"text": {"content": desc[:2000]}}]}
         if ev.get("location"):
-            loc_id = find_location_id(ev["location"], NOTION_TOKEN)
+            loc_id = find_location_id(ev["location"], NOTION_TOKEN, _gemini_client)
             if loc_id:
                 props["Locations"] = {"relation": [{"id": loc_id}]}
         return props
@@ -1069,6 +1076,7 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
     Mutates `existing` and `all_entries` in-place as new entries are created.
     Returns dict: {created, updated, skipped, flagged_dupes, total_events}
     """
+    set_gemini_client(client)
     created = updated = skipped = flagged_dupes = total_events = 0
 
     page_url = page_entry["url"]

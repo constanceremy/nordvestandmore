@@ -3228,7 +3228,7 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
         if ev.get("duplicate_of"):
             props["Duplicate of"] = {"rich_text": [{"text": {"content": ev["duplicate_of"][:2000]}}]}
         if ev.get("location"):
-            loc_id = find_location_id(ev["location"], NOTION_TOKEN)
+            loc_id = find_location_id(ev["location"], NOTION_TOKEN, get_gemini_client())
             if loc_id:
                 props["Locations"] = {"relation": [{"id": loc_id}]}
         return props
