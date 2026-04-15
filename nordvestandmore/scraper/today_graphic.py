@@ -699,22 +699,17 @@ def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], targe
 
         cl = Client()
 
-        # Inject cookies directly — avoids login_by_sessionid → get_timeline_feed
-        # which crashes on new Instagram API fields (e.g. 'pinned_channels_info')
-        cl.private.cookies.set("sessionid", sessionid, domain=".instagram.com")
+        # Set cookies without calling login_by_sessionid (which calls get_timeline_feed
+        # and crashes on new Instagram API fields like 'pinned_channels_info')
+        cookies = {"sessionid": sessionid}
         if csrftoken:
-            cl.private.cookies.set("csrftoken", csrftoken, domain=".instagram.com")
-
-        # Resolve own numeric user ID (simple endpoint, no model parsing issues)
-        r = cl.private.request(
-            "GET",
-            "https://i.instagram.com/api/v1/accounts/current_user/",
-            params={"edit": "true"},
-        )
-        r.raise_for_status()
-        own_user_id = int(r.json()["user"]["pk"])
-        cl.user_id  = own_user_id
+            cookies["csrftoken"] = csrftoken
+        cl.set_settings({"cookies": cookies})
         cl.username = IG_USERNAME
+
+        # Resolve numeric user ID via instagrapi's username lookup (no model issues)
+        own_user_id = cl.user_id_from_username(IG_USERNAME)
+        cl.user_id  = own_user_id
         print(f"📲 Instagram DM → {IG_USERNAME} (uid={own_user_id})")
 
         # Send each slide image
