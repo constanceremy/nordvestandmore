@@ -687,9 +687,12 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             "rich_text": [{"text": {"content": ev["to_tag"][:2000]}}]
         }
 
-    # Tags (multi_select) — set on create, or on update if the existing entry had no tag
+    # Tags (select, primary) — Wix-compatible single tag
+    if ev.get("tag") and (not is_update or ev.get("set_tag_on_update")):
+        props["Tags"] = {"select": {"name": ev["tag"]}}
+    # Tag list (multi_select, all tags) — Vercel website reads this
     if ev.get("tags_list") and (not is_update or ev.get("set_tag_on_update")):
-        props["Tags"] = {"multi_select": [{"name": t} for t in ev["tags_list"]]}
+        props["Tag list"] = {"multi_select": [{"name": t} for t in ev["tags_list"]]}
 
     # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
     if ev.get("review_notes"):

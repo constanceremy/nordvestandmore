@@ -3306,11 +3306,12 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
     if ev.get("recurring"):
         props["Recurring"] = {"checkbox": True}
 
-    # Tags (multi_select) — only set on create, preserve manual edits on update
+    # Tags (select, primary) — Wix-compatible single tag; only set on create
+    if ev.get("tag") and not is_update:
+        props["Tags"] = {"select": {"name": ev["tag"]}}
+    # Tag list (multi_select, all tags) — Vercel website reads this; only set on create
     if ev.get("tags_list") and not is_update:
-        props["Tags"] = {"multi_select": [{"name": t} for t in ev["tags_list"]]}
-    elif ev.get("tag") and not is_update:
-        props["Tags"] = {"multi_select": [{"name": ev["tag"]}]}
+        props["Tag list"] = {"multi_select": [{"name": t} for t in ev["tags_list"]]}
 
     # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
     if ev.get("review_notes"):
