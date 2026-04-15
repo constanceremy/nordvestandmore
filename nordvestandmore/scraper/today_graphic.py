@@ -21,11 +21,14 @@ Usage:
     python3 today_graphic.py --dry-run
 """
 import argparse
+import base64
 import io
 import os
+import pickle
 import re
 import smtplib
 import sys
+import tempfile
 from datetime import date, datetime
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -42,6 +45,8 @@ NOTION_DB       = os.environ.get("NOTION_DATABASE_ID", "")
 NTFY_TOPIC      = os.environ.get("NTFY_TOPIC", "")
 GMAIL_USER      = os.environ.get("GMAIL_USER", "nordvestandmore@gmail.com")
 GMAIL_APP_PASS  = os.environ.get("GMAIL_APP_PASSWORD", "")
+IG_SESSION_B64  = os.environ.get("IG_SESSION_B64", "")
+IG_USERNAME     = "nordvestandmore"
 
 W, H = 1080, 1920
 
@@ -659,6 +664,67 @@ def send_images(images: list[Image.Image], slides: list[list[dict]], target_date
             print(f"⚠️  Failed to send slide {slide_num} caption: {e}")
 
 
+# ── Instagram DM sending ──────────────────────────────────────────────────────
+
+def _all_mentions(slides: list[list[dict]]) -> str:
+    """Return deduplicated @mentions across all slides, one per line."""
+    seen, mentions = set(), []
+    for ev in (ev for slide in slides for ev in slide):
+        for handle in re.findall(r"@[\w.]+", ev.get("ig_caption") or ev.get("name") or ""):
+            if handle.lower() not in seen:
+                seen.add(handle.lower())
+                mentions.append(handle)
+    return "\n".join(mentions) if mentions else "(no @mentions)"
+
+
+def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], target_date: date):
+    """Send each slide image + @mentions text as a DM from nordvestandmore to itself."""
+    if not IG_SESSION_B64:
+        print("⚠️  IG_SESSION_B64 not set — skipping Instagram DM")
+        return
+
+    try:
+        from instagrapi import Client
+    except ImportError:
+        print("⚠️  instagrapi not installed — skipping Instagram DM")
+        return
+
+    try:
+        session_data = pickle.loads(base64.b64decode(IG_SESSION_B64))
+        sessionid = session_data.get("sessionid") or session_data.get("session_id")
+        if not sessionid:
+            print("⚠️  Could not extract sessionid from IG_SESSION_B64")
+            return
+
+        cl = Client()
+        cl.login_by_sessionid(sessionid)
+        user_id = cl.user_id_from_username(IG_USERNAME)
+        print(f"📲 Instagram DM → {IG_USERNAME} (uid={user_id})")
+
+        # Send each slide image
+        for i, img in enumerate(images, 1):
+            tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+            try:
+                img.convert("RGB").save(tmp.name, format="JPEG", quality=95)
+                tmp.close()
+                cl.direct_send_photo(Path(tmp.name), user_ids=[user_id])
+                print(f"✅ Slide {i} image sent via Instagram DM")
+            except Exception as e:
+                print(f"⚠️  Instagram DM photo failed (slide {i}): {e}")
+            finally:
+                Path(tmp.name).unlink(missing_ok=True)
+
+        # Send @mentions text
+        try:
+            cl.direct_send(_all_mentions(slides), user_ids=[user_id])
+            print("✅ @mentions sent via Instagram DM")
+        except Exception as e:
+            print(f"⚠️  Instagram DM text failed: {e}")
+
+    except Exception as e:
+        print(f"⚠️  Instagram DM setup failed: {e}")
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
@@ -698,6 +764,7 @@ def main():
             print(f"   Caption preview:\n{_build_caption(slide_events)}\n")
     else:
         send_email(images, slides, target_date)
+        send_instagram_dm(images, slides, target_date)
         send_images(images, slides, target_date)
 
 
