@@ -765,7 +765,6 @@ def main():
     else:
         send_email(images, slides, target_date)
         send_instagram_dm(images, slides, target_date)
-        send_images(images, slides, target_date)
 
 
 if __name__ == "__main__":
