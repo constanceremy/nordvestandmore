@@ -24,8 +24,12 @@ import argparse
 import io
 import os
 import re
+import smtplib
 import sys
 from datetime import date, datetime
+from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from pathlib import Path
 
 import requests
@@ -33,9 +37,11 @@ from PIL import Image, ImageDraw, ImageFont
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
-NOTION_DB    = os.environ.get("NOTION_DATABASE_ID", "")
-NTFY_TOPIC   = os.environ.get("NTFY_TOPIC", "")
+NOTION_TOKEN    = os.environ.get("NOTION_TOKEN", "")
+NOTION_DB       = os.environ.get("NOTION_DATABASE_ID", "")
+NTFY_TOPIC      = os.environ.get("NTFY_TOPIC", "")
+GMAIL_USER      = os.environ.get("GMAIL_USER", "nordvestandmore@gmail.com")
+GMAIL_APP_PASS  = os.environ.get("GMAIL_APP_PASSWORD", "")
 
 W, H = 1080, 1920
 
@@ -547,15 +553,58 @@ def render_all(events: list[dict], target_date: date) -> tuple[list[Image.Image]
 
 # ── ntfy sending ──────────────────────────────────────────────────────────────
 
+def send_email(images: list[Image.Image], slides: list[list[dict]], target_date: date):
+    """Send each slide as an image attachment + @mentions as body text."""
+    if not GMAIL_APP_PASS:
+        print("⚠️  GMAIL_APP_PASSWORD not set — skipping email")
+        return
+
+    date_str = target_date.strftime("%A %-d %B")
+
+    msg = MIMEMultipart()
+    msg["From"]    = GMAIL_USER
+    msg["To"]      = GMAIL_USER
+    msg["Subject"] = f"Today in Nordvest - {date_str}"
+
+    # Body: all @mentions across all slides, one per line, no duplicates
+    all_events = [ev for slide in slides for ev in slide]
+    seen, mentions = set(), []
+    for ev in all_events:
+        for handle in re.findall(r"@[\w.]+", ev.get("ig_caption") or ev.get("name") or ""):
+            if handle.lower() not in seen:
+                seen.add(handle.lower())
+                mentions.append(handle)
+    body = "\n".join(mentions) if mentions else "(no @mentions)"
+    msg.attach(MIMEText(body, "plain"))
+
+    # Attach each slide image
+    for i, img in enumerate(images, 1):
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        part = MIMEImage(buf.getvalue(), name=f"today_{target_date}_{i}.png")
+        part["Content-Disposition"] = f'attachment; filename="today_{target_date}_{i}.png"'
+        msg.attach(part)
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(GMAIL_USER, GMAIL_APP_PASS)
+            smtp.send_message(msg)
+        print(f"✅ Email sent to {GMAIL_USER}")
+    except Exception as e:
+        print(f"⚠️  Email failed: {e}")
+
+
 def _build_caption(slide_events: list[dict]) -> str:
-    """Build IG caption text for one slide's events."""
-    lines = [ev["ig_caption"] for ev in slide_events if ev.get("ig_caption")]
-    if not lines:
-        lines = [
-            f"• {ev['time'] or 'All day'} - {ev['name']}"
-            for ev in slide_events
-        ]
-    return "\n".join(lines)
+    """Extract all @mentions from the slide's events — one per line, no duplicates."""
+    seen = set()
+    mentions = []
+    for ev in slide_events:
+        source = ev.get("ig_caption") or ev.get("name") or ""
+        for handle in re.findall(r"@[\w.]+", source):
+            if handle.lower() not in seen:
+                seen.add(handle.lower())
+                mentions.append(handle)
+    return "\n".join(mentions) if mentions else "(no @mentions found)"
 
 
 def send_images(images: list[Image.Image], slides: list[list[dict]], target_date: date):
@@ -648,6 +697,7 @@ def main():
             print(f"💾 Dry run — saved to {out}")
             print(f"   Caption preview:\n{_build_caption(slide_events)}\n")
     else:
+        send_email(images, slides, target_date)
         send_images(images, slides, target_date)
 
 
