@@ -692,14 +692,30 @@ def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], targe
     try:
         session_data = pickle.loads(base64.b64decode(IG_SESSION_B64))
         sessionid = session_data.get("sessionid") or session_data.get("session_id")
+        csrftoken  = session_data.get("csrftoken", "")
         if not sessionid:
             print("⚠️  Could not extract sessionid from IG_SESSION_B64")
             return
 
         cl = Client()
-        cl.login_by_sessionid(sessionid)
-        user_id = cl.user_id_from_username(IG_USERNAME)
-        print(f"📲 Instagram DM → {IG_USERNAME} (uid={user_id})")
+
+        # Inject cookies directly — avoids login_by_sessionid → get_timeline_feed
+        # which crashes on new Instagram API fields (e.g. 'pinned_channels_info')
+        cl.private.cookies.set("sessionid", sessionid, domain=".instagram.com")
+        if csrftoken:
+            cl.private.cookies.set("csrftoken", csrftoken, domain=".instagram.com")
+
+        # Resolve own numeric user ID (simple endpoint, no model parsing issues)
+        r = cl.private.request(
+            "GET",
+            "https://i.instagram.com/api/v1/accounts/current_user/",
+            params={"edit": "true"},
+        )
+        r.raise_for_status()
+        own_user_id = int(r.json()["user"]["pk"])
+        cl.user_id  = own_user_id
+        cl.username = IG_USERNAME
+        print(f"📲 Instagram DM → {IG_USERNAME} (uid={own_user_id})")
 
         # Send each slide image
         for i, img in enumerate(images, 1):
@@ -707,7 +723,7 @@ def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], targe
             try:
                 img.convert("RGB").save(tmp.name, format="JPEG", quality=95)
                 tmp.close()
-                cl.direct_send_photo(Path(tmp.name), user_ids=[user_id])
+                cl.direct_send_photo(Path(tmp.name), user_ids=[own_user_id])
                 print(f"✅ Slide {i} image sent via Instagram DM")
             except Exception as e:
                 print(f"⚠️  Instagram DM photo failed (slide {i}): {e}")
@@ -716,7 +732,7 @@ def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], targe
 
         # Send @mentions text
         try:
-            cl.direct_send(_all_mentions(slides), user_ids=[user_id])
+            cl.direct_send(_all_mentions(slides), user_ids=[own_user_id])
             print("✅ @mentions sent via Instagram DM")
         except Exception as e:
             print(f"⚠️  Instagram DM text failed: {e}")
