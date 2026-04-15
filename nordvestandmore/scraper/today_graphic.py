@@ -711,7 +711,10 @@ def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], targe
         # Extract user_id from sessionid — format is "USER_ID%3Ahash%3A..."
         # This avoids any API call (and potential rate-limiting) for the ID lookup
         own_user_id = int(urllib.parse.unquote(sessionid).split(":")[0])
-        cl.user_id  = own_user_id
+        try:
+            cl._user_id = own_user_id   # private attr; user_id property has no setter
+        except Exception:
+            pass
         print(f"📲 Instagram DM → {IG_USERNAME} (uid={own_user_id})")
 
         # Send each slide image
