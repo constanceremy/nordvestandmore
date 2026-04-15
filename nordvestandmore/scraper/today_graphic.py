@@ -48,7 +48,8 @@ NTFY_TOPIC      = os.environ.get("NTFY_TOPIC", "")
 GMAIL_USER      = os.environ.get("GMAIL_USER", "nordvestandmore@gmail.com")
 GMAIL_APP_PASS  = os.environ.get("GMAIL_APP_PASSWORD", "")
 IG_SESSION_B64  = os.environ.get("IG_SESSION_B64", "")
-IG_USERNAME     = "nordvestandmore"
+IG_USERNAME     = "nordvestandmore"   # sender
+IG_RECIPIENT    = "constanceremy"     # receiver
 
 W, H = 1080, 1920
 
@@ -730,18 +731,31 @@ def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], targe
         print("⚠️  IG_SESSION_B64 not set or invalid — skipping Instagram DM")
         return
 
-    sessionid, csrftoken, own_user_id = creds
-    print(f"📲 Instagram DM → {IG_USERNAME} (uid={own_user_id})")
-
+    sessionid, csrftoken, _ = creds
     sess    = _ig_session_requests(sessionid, csrftoken)
     ig_base = "https://www.instagram.com/api/v1"
+
+    # Look up recipient user ID
+    try:
+        r = sess.get(
+            "https://www.instagram.com/api/v1/users/web_profile_info/",
+            params={"username": IG_RECIPIENT},
+            timeout=15,
+        )
+        r.raise_for_status()
+        recipient_id = int(r.json()["data"]["user"]["id"])
+    except Exception as e:
+        print(f"⚠️  Could not resolve {IG_RECIPIENT} user ID: {e}")
+        return
+
+    print(f"📲 Instagram DM {IG_USERNAME} → {IG_RECIPIENT} (uid={recipient_id})")
 
     # Send @mentions text first
     try:
         r = sess.post(
             f"{ig_base}/direct_v2/threads/broadcast/text/",
             data={
-                "recipient_users": f"[[{own_user_id}]]",
+                "recipient_users": f"[[{recipient_id}]]",
                 "action":          "send_item",
                 "client_context":  uuidmod.uuid4().hex,
                 "text":            _all_mentions(slides),
@@ -767,7 +781,7 @@ def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], targe
                 f"{ig_base}/direct_v2/threads/broadcast/upload_photo/",
                 files={"photo": (f"today_{target_date}_{i}.jpg", img_bytes, "image/jpeg")},
                 data={
-                    "recipient_users": f"[[{own_user_id}]]",
+                    "recipient_users": f"[[{recipient_id}]]",
                     "action":          "send_item",
                     "client_context":  uuidmod.uuid4().hex,
                 },
