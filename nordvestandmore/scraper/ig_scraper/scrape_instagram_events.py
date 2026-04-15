@@ -692,7 +692,7 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
         props["Tags"] = {"select": {"name": ev["tag"]}}
     # Tag list (multi_select, all tags) — Vercel website reads this
     if ev.get("tags_list") and (not is_update or ev.get("set_tag_on_update")):
-        props["Tag list"] = {"multi_select": [{"name": t} for t in ev["tags_list"]]}
+        props["Tag List"] = {"multi_select": [{"name": t} for t in ev["tags_list"]]}
 
     # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
     if ev.get("review_notes"):
