@@ -763,17 +763,17 @@ def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], targe
             tmp.close()
             img_bytes = Path(tmp.name).read_bytes()
 
-            # Step 1: upload the photo
+            # Step 1: upload the photo (rupload uses i.instagram.com, not www)
             upload_id = str(int(__import__("time").time() * 1000))
             up = sess.post(
-                f"{ig_base}/rupload/photo/{upload_id}_0/",
+                f"https://i.instagram.com/rupload/photo/{upload_id}_0/",
                 data=img_bytes,
                 headers={
+                    "Content-Type":    "image/jpeg",
                     "X-Entity-Type":   "image/jpeg",
                     "X-Entity-Name":   f"{upload_id}_0",
                     "X-Entity-Length": str(len(img_bytes)),
                     "Offset":          "0",
-                    "Content-Type":    "application/octet-stream",
                 },
                 timeout=60,
             )
