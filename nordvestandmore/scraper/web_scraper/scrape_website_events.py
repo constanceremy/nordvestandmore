@@ -29,7 +29,7 @@ from bs4 import BeautifulSoup
 # Add parent dir to path for dedup import
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dedup import load_source_mapping, find_duplicate, similarity, are_sources_related, get_source_priority
-from auto_tag import classify_event, is_not_event, should_skip_entirely, is_excluded_location, is_unknown_location
+from auto_tag import classify_event, classify_seasonal, is_not_event, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
 from fix_locations import clean_location
 from locations_cache import find_location_id, find_location_coords
@@ -3306,9 +3306,11 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
     if ev.get("recurring"):
         props["Recurring"] = {"checkbox": True}
 
-    # Tag (select) — only set on create, preserve manual edits on update
-    if ev.get("tag") and not is_update:
-        props["Tags"] = {"select": {"name": ev["tag"]}}
+    # Tags (multi_select) — only set on create, preserve manual edits on update
+    if ev.get("tags_list") and not is_update:
+        props["Tags"] = {"multi_select": [{"name": t} for t in ev["tags_list"]]}
+    elif ev.get("tag") and not is_update:
+        props["Tags"] = {"multi_select": [{"name": ev["tag"]}]}
 
     # Review Notes (rich_text) — flagged for manual review (e.g. unknown location)
     if ev.get("review_notes"):
@@ -3502,6 +3504,9 @@ def scrape_site(site_key: str, existing: dict, all_entries: list,
                 event_data.get("organizer", ""),
             ),
         }
+        _primary = ev["tag"]
+        _seasonal = classify_seasonal(event_data.get("event_name", ""), event_data.get("description", ""))
+        ev["tags_list"] = ([_primary] if _primary else []) + [s for s in _seasonal if s != _primary]
 
         # Skip events at excluded locations (not in Nordvest)
         if is_excluded_location(ev.get("location", "")):
