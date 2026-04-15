@@ -580,7 +580,7 @@ def send_images(images: list[Image.Image], slides: list[list[dict]], target_date
                 f"https://ntfy.sh/{NTFY_TOPIC}",
                 data=buf.read(),
                 headers={
-                    "Title":    f"Today in Nordvest — {date_str}{slide_label}",
+                    "Title":    f"Today in Nordvest - {date_str}{slide_label}",
                     "Filename": f"today_{target_date.isoformat()}_{slide_num}.png",
                     "Tags":     "camera,sunrise",
                     "Priority": "default",
@@ -593,7 +593,7 @@ def send_images(images: list[Image.Image], slides: list[list[dict]], target_date
 
         # Caption for this slide
         caption = _build_caption(slide_events)
-        caption_label = f"IG caption{slide_label} — {date_str}"
+        caption_label = f"IG caption{slide_label} - {date_str}"
         try:
             requests.post(
                 f"https://ntfy.sh/{NTFY_TOPIC}",
