@@ -755,7 +755,7 @@ def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], targe
     except Exception as e:
         print(f"⚠️  Instagram DM text error: {e}")
 
-    # Send each slide image
+    # Send each slide image (multipart upload + broadcast in one step)
     for i, img in enumerate(images, 1):
         tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
         try:
@@ -763,41 +763,20 @@ def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], targe
             tmp.close()
             img_bytes = Path(tmp.name).read_bytes()
 
-            # Step 1: upload the photo (rupload uses i.instagram.com, not www)
-            upload_id = str(int(__import__("time").time() * 1000))
-            up = sess.post(
-                f"https://i.instagram.com/rupload/photo/{upload_id}_0/",
-                data=img_bytes,
-                headers={
-                    "Content-Type":    "image/jpeg",
-                    "X-Entity-Type":   "image/jpeg",
-                    "X-Entity-Name":   f"{upload_id}_0",
-                    "X-Entity-Length": str(len(img_bytes)),
-                    "Offset":          "0",
-                },
-                timeout=60,
-            )
-            if not up.ok:
-                print(f"⚠️  Instagram DM photo upload failed (slide {i}): {up.status_code}")
-                continue
-            upload_id_resp = up.json().get("upload_id", upload_id)
-
-            # Step 2: broadcast the uploaded photo as a DM
             br = sess.post(
                 f"{ig_base}/direct_v2/threads/broadcast/upload_photo/",
+                files={"photo": (f"today_{target_date}_{i}.jpg", img_bytes, "image/jpeg")},
                 data={
-                    "recipient_users":   f"[[{own_user_id}]]",
-                    "action":            "send_item",
-                    "client_context":    uuidmod.uuid4().hex,
-                    "upload_id":         upload_id_resp,
-                    "allow_full_aspect_ratio": "true",
+                    "recipient_users": f"[[{own_user_id}]]",
+                    "action":          "send_item",
+                    "client_context":  uuidmod.uuid4().hex,
                 },
-                timeout=30,
+                timeout=60,
             )
             if br.ok:
                 print(f"✅ Slide {i} image sent via Instagram DM")
             else:
-                print(f"⚠️  Instagram DM photo broadcast failed (slide {i}): {br.status_code} {br.text[:200]}")
+                print(f"⚠️  Instagram DM photo failed (slide {i}): {br.status_code} {br.text[:200]}")
         except Exception as e:
             print(f"⚠️  Instagram DM photo error (slide {i}): {e}")
         finally:
