@@ -574,16 +574,19 @@ def send_email(images: list[Image.Image], slides: list[list[dict]], target_date:
     msg["To"]      = GMAIL_USER
     msg["Subject"] = f"Today in Nordvest - {date_str}"
 
-    # Body: all @mentions across all slides, one per line, no duplicates
-    all_events = [ev for slide in slides for ev in slide]
-    seen, mentions = set(), []
-    for ev in all_events:
-        for handle in re.findall(r"@[\w.]+", ev.get("ig_caption") or ev.get("name") or ""):
-            if handle.lower() not in seen:
-                seen.add(handle.lower())
-                mentions.append(handle)
-    body = "\n".join(mentions) if mentions else "(no @mentions)"
-    msg.attach(MIMEText(body, "plain"))
+    # Body: @mentions per slide, separated by slide header
+    body_parts = []
+    for i, slide_events in enumerate(slides, 1):
+        if len(slides) > 1:
+            body_parts.append(f"--- Slide {i} ---")
+        seen, mentions = set(), []
+        for ev in slide_events:
+            for handle in re.findall(r"@[\w.]+", ev.get("ig_caption") or ev.get("name") or ""):
+                if handle.lower() not in seen:
+                    seen.add(handle.lower())
+                    mentions.append(handle)
+        body_parts.append("\n".join(mentions) if mentions else "(no @mentions)")
+    msg.attach(MIMEText("\n\n".join(body_parts), "plain"))
 
     # Attach each slide image
     for i, img in enumerate(images, 1):
