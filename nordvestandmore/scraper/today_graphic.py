@@ -48,8 +48,9 @@ NTFY_TOPIC      = os.environ.get("NTFY_TOPIC", "")
 GMAIL_USER      = os.environ.get("GMAIL_USER", "nordvestandmore@gmail.com")
 GMAIL_APP_PASS  = os.environ.get("GMAIL_APP_PASSWORD", "")
 IG_SESSION_B64  = os.environ.get("IG_SESSION_B64", "")
-IG_USERNAME     = "nordvestandmore"   # sender
-IG_RECIPIENT    = "constanceremy"     # receiver
+IG_USERNAME       = "nordvestandmore"   # sender
+IG_RECIPIENT      = "constanceremy"     # receiver
+IG_RECIPIENT_ID   = 186062440           # numeric ID — avoids a rate-limited API lookup
 
 W, H = 1080, 1920
 
@@ -738,19 +739,7 @@ def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], targe
     sess    = _ig_session_requests(sessionid, csrftoken)
     ig_base = "https://www.instagram.com/api/v1"
 
-    # Look up recipient user ID
-    try:
-        r = sess.get(
-            "https://www.instagram.com/api/v1/users/web_profile_info/",
-            params={"username": IG_RECIPIENT},
-            timeout=15,
-        )
-        r.raise_for_status()
-        recipient_id = int(r.json()["data"]["user"]["id"])
-    except Exception as e:
-        print(f"⚠️  Could not resolve {IG_RECIPIENT} user ID: {e}")
-        return
-
+    recipient_id = IG_RECIPIENT_ID
     print(f"📲 Instagram DM {IG_USERNAME} → {IG_RECIPIENT} (uid={recipient_id})")
 
     # Send @mentions text first
