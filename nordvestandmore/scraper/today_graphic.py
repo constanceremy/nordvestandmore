@@ -21,16 +21,11 @@ Usage:
     python3 today_graphic.py --dry-run
 """
 import argparse
-import base64
 import io
 import os
-import pickle
 import re
 import smtplib
 import sys
-import tempfile
-import urllib.parse
-import uuid as uuidmod
 from datetime import date, datetime
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -47,10 +42,6 @@ NOTION_DB       = os.environ.get("NOTION_DATABASE_ID", "")
 NTFY_TOPIC      = os.environ.get("NTFY_TOPIC", "")
 GMAIL_USER      = os.environ.get("GMAIL_USER", "nordvestandmore@gmail.com")
 GMAIL_APP_PASS  = os.environ.get("GMAIL_APP_PASSWORD", "")
-IG_SESSION_B64  = os.environ.get("IG_SESSION_B64", "")
-IG_USERNAME       = "nordvestandmore"   # sender
-IG_RECIPIENT      = "constanceremy"     # receiver
-IG_RECIPIENT_ID   = 186062440           # numeric ID — avoids a rate-limited API lookup
 
 W, H = 1080, 1920
 
@@ -671,123 +662,6 @@ def send_images(images: list[Image.Image], slides: list[list[dict]], target_date
             print(f"⚠️  Failed to send slide {slide_num} caption: {e}")
 
 
-# ── Instagram DM sending ──────────────────────────────────────────────────────
-
-def _all_mentions(slides: list[list[dict]]) -> str:
-    """Return deduplicated @mentions across all slides, one per line."""
-    seen, mentions = set(), []
-    for ev in (ev for slide in slides for ev in slide):
-        for handle in re.findall(r"@[\w.]+", ev.get("ig_caption") or ev.get("name") or ""):
-            if handle.lower() not in seen:
-                seen.add(handle.lower())
-                mentions.append(handle)
-    return "\n".join(mentions) if mentions else "(no @mentions)"
-
-
-def _ig_session() -> tuple[str, str, int] | None:
-    """
-    Decode IG_SESSION_B64 → (sessionid, csrftoken, user_id).
-    user_id is extracted from the sessionid string (no API call needed).
-    Returns None if the secret is missing or unparseable.
-    """
-    if not IG_SESSION_B64:
-        return None
-    try:
-        data      = pickle.loads(base64.b64decode(IG_SESSION_B64))
-        sessionid = data.get("sessionid") or data.get("session_id", "")
-        csrftoken = data.get("csrftoken", "")
-        if not sessionid:
-            return None
-        user_id = int(urllib.parse.unquote(sessionid).split(":")[0])
-        return sessionid, csrftoken, user_id
-    except Exception as e:
-        print(f"⚠️  Could not parse IG_SESSION_B64: {e}")
-        return None
-
-
-def _ig_session_requests(sessionid: str, csrftoken: str) -> requests.Session:
-    """Build a requests.Session that looks like an Instagram browser client."""
-    sess = requests.Session()
-    sess.headers.update({
-        "User-Agent":          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                               "AppleWebKit/537.36 (KHTML, like Gecko) "
-                               "Chrome/124.0.0.0 Safari/537.36",
-        "X-IG-App-ID":         "936619743392459",
-        "X-CSRFToken":         csrftoken,
-        "X-Instagram-AJAX":    "1",
-        "Content-Type":        "application/x-www-form-urlencoded",
-        "Origin":              "https://www.instagram.com",
-        "Referer":             "https://www.instagram.com/direct/inbox/",
-    })
-    sess.cookies.set("sessionid", sessionid, domain=".instagram.com")
-    if csrftoken:
-        sess.cookies.set("csrftoken", csrftoken, domain=".instagram.com")
-    return sess
-
-
-def send_instagram_dm(images: list[Image.Image], slides: list[list[dict]], target_date: date):
-    """
-    Send @mentions text + each slide image as a DM from nordvestandmore to itself.
-    Uses the Instagram web API directly (browser session, no instagrapi needed).
-    """
-    creds = _ig_session()
-    if not creds:
-        print("⚠️  IG_SESSION_B64 not set or invalid — skipping Instagram DM")
-        return
-
-    sessionid, csrftoken, _ = creds
-    sess    = _ig_session_requests(sessionid, csrftoken)
-    ig_base = "https://www.instagram.com/api/v1"
-
-    recipient_id = IG_RECIPIENT_ID
-    print(f"📲 Instagram DM {IG_USERNAME} → {IG_RECIPIENT} (uid={recipient_id})")
-
-    # Send @mentions text first
-    try:
-        r = sess.post(
-            f"{ig_base}/direct_v2/threads/broadcast/text/",
-            data={
-                "recipient_users": f"[[{recipient_id}]]",
-                "action":          "send_item",
-                "client_context":  uuidmod.uuid4().hex,
-                "text":            _all_mentions(slides),
-            },
-            timeout=30,
-        )
-        if r.ok:
-            print("✅ @mentions sent via Instagram DM")
-        else:
-            print(f"⚠️  Instagram DM text failed: {r.status_code} {r.text[:200]}")
-    except Exception as e:
-        print(f"⚠️  Instagram DM text error: {e}")
-
-    # Send each slide image (multipart upload + broadcast in one step)
-    for i, img in enumerate(images, 1):
-        tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
-        try:
-            img.convert("RGB").save(tmp.name, format="JPEG", quality=95)
-            tmp.close()
-            img_bytes = Path(tmp.name).read_bytes()
-
-            br = sess.post(
-                f"{ig_base}/direct_v2/threads/broadcast/upload_photo/",
-                files={"photo": (f"today_{target_date}_{i}.jpg", img_bytes, "image/jpeg")},
-                data={
-                    "recipient_users": f"[[{recipient_id}]]",
-                    "action":          "send_item",
-                    "client_context":  uuidmod.uuid4().hex,
-                },
-                timeout=60,
-            )
-            if br.ok:
-                print(f"✅ Slide {i} image sent via Instagram DM")
-            else:
-                print(f"⚠️  Instagram DM photo failed (slide {i}): {br.status_code} {br.text[:200]}")
-        except Exception as e:
-            print(f"⚠️  Instagram DM photo error (slide {i}): {e}")
-        finally:
-            Path(tmp.name).unlink(missing_ok=True)
-
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -828,7 +702,6 @@ def main():
             print(f"   Caption preview:\n{_build_caption(slide_events)}\n")
     else:
         send_email(images, slides, target_date)
-        send_instagram_dm(images, slides, target_date)
 
 
 if __name__ == "__main__":

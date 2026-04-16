@@ -37,7 +37,6 @@ jobs:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          IG_SESSION_B64: ${{ secrets.IG_SESSION_B64 }}
         run: |
           ARGS=""
           if [ -n "${{ inputs.date }}" ]; then
