@@ -114,7 +114,7 @@ export default function GuideClient({ locations }: { locations: LocationItem[] }
       {/* Map + List split */}
       <div className="flex flex-col lg:flex-row gap-0 border border-black">
         {/* Map */}
-        <div className="lg:w-1/2 h-[400px] lg:h-auto lg:min-h-[600px] border-b lg:border-b-0 lg:border-r border-black">
+        <div className="lg:w-1/2 h-[400px] lg:h-auto lg:min-h-[600px] border-b lg:border-b-0 lg:border-r border-black isolate">
           <GuideMap locations={filtered} />
         </div>
 
