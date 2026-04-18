@@ -2,8 +2,8 @@ name: Today in Nordvest Graphic
 
 on:
   schedule:
-    # 04:30 UTC = 06:30 Copenhagen (CEST, summer). In winter (CET) this is 05:30 — still fine.
-    - cron: "30 4 * * *"
+    # 02:30 UTC — targets 06:30 Copenhagen accounting for GitHub Actions queue delays (typically 1.5-2.5h).
+    - cron: "30 2 * * *"
   workflow_dispatch:
     inputs:
       date:
