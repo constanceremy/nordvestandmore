@@ -31,10 +31,12 @@ export default async function BlogPage({
   const allPosts = await getBlogPosts();
   const posts = tag ? allPosts.filter((p) => p.tags.includes(tag)) : allPosts;
 
+  const allTags = [...new Set(allPosts.flatMap((p) => p.tags))].sort();
+
   return (
     <div className="max-w-6xl mx-auto px-6 py-16">
       {/* Header */}
-      <div className="mb-12 border-b border-black pb-10">
+      <div className="mb-8 border-b border-black pb-10">
         <p className="text-xs font-semibold tracking-widest uppercase text-gray-400 mb-3">
           Nordvest stories
         </p>
@@ -44,20 +46,32 @@ export default async function BlogPage({
         >
           Blog
         </h1>
-        {tag && (
-          <div className="flex items-center gap-4 mt-6">
-            <span className="text-xs font-semibold tracking-widest uppercase bg-black text-white px-3 py-1">
-              {tag}
-            </span>
-            <Link
-              href="/blog"
-              className="text-xs tracking-widest uppercase underline underline-offset-4 hover:opacity-50 transition-opacity"
-            >
-              Clear
-            </Link>
-          </div>
-        )}
       </div>
+
+      {/* Tag filters */}
+      {allTags.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-10">
+          <Link
+            href="/blog"
+            className={`text-xs font-semibold tracking-widest uppercase px-3 py-1.5 border transition-colors ${
+              !tag ? "bg-black text-white border-black" : "border-black hover:bg-black hover:text-white"
+            }`}
+          >
+            All
+          </Link>
+          {allTags.map((t) => (
+            <Link
+              key={t}
+              href={`/blog?tag=${encodeURIComponent(t)}`}
+              className={`text-xs font-semibold tracking-widest uppercase px-3 py-1.5 border transition-colors ${
+                tag === t ? "bg-black text-white border-black" : "border-black hover:bg-black hover:text-white"
+              }`}
+            >
+              {t}
+            </Link>
+          ))}
+        </div>
+      )}
 
       {posts.length === 0 ? (
         <p className="text-gray-400">No posts found.</p>
