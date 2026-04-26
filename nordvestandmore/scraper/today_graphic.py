@@ -396,7 +396,7 @@ def _render_header(draw: ImageDraw, fonts: dict, target_date: date):
     # Label row: NV & MORE (left)  ·  date (right)
     label_fnt      = _load_spec(fonts["reg"], 22)
     label_tracking = 7
-    label_y        = 48
+    label_y        = 148
 
     day_name   = target_date.strftime("%A").upper()
     month_name = target_date.strftime("%B").upper()
