@@ -211,6 +211,7 @@ export default async function SessionPage({
               currency={exp.currency}
               stripeProductId={exp.stripeProductId}
               soldOut={soldOut}
+              cancellationHours={policy?.cancellationWindow}
             />
 
             <p className="text-xs text-gray-400 mt-3 text-center">

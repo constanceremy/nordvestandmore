@@ -19,14 +19,20 @@ async function sendConfirmationEmail({
   name,
   email,
   eventDate,
+  eventTitle,
+  eventId,
   amount,
   currency,
+  cancellationHours,
 }: {
   name: string;
   email: string;
   eventDate?: string;
+  eventTitle?: string;
+  eventId?: string;
   amount: number;
   currency: string;
+  cancellationHours?: number;
 }) {
   const dateLabel = eventDate
     ? new Date(eventDate).toLocaleDateString("en-DK", {
@@ -36,6 +42,22 @@ async function sendConfirmationEmail({
         year: "numeric",
       })
     : "";
+
+  const cancellationSubject = `Booking Cancellation -- ${eventTitle || "event"} -- ${dateLabel || eventDate || ""} -- ${name}`;
+  const cancellationMailto = `mailto:nordvestandmore@gmail.com?subject=${encodeURIComponent(cancellationSubject)}`;
+  const policyUrl = eventId ? `https://nordvestandmore.com/with-us/${eventId}` : "https://nordvestandmore.com/with-us";
+
+  const cancellationSection = `
+    <div style="margin-top: 24px; padding: 16px; border: 1px solid #e5e7eb; background: #f9fafb;">
+      <p style="margin: 0 0 8px 0; font-weight: 600; font-size: 14px;">Need to cancel?</p>
+      ${cancellationHours && cancellationHours > 0
+        ? `<p style="margin: 0 0 12px 0; font-size: 14px; color: #374151;">Please contact us at least <strong>${cancellationHours} hours</strong> before the event starts.</p>`
+        : `<p style="margin: 0 0 12px 0; font-size: 14px; color: #374151;">Please contact us as soon as possible if you need to cancel.</p>`
+      }
+      <p style="margin: 0 0 8px 0; font-size: 13px;"><a href="${policyUrl}" style="color: #111;">View booking policy →</a></p>
+      <a href="${cancellationMailto}" style="display: inline-block; margin-top: 4px; padding: 8px 16px; background: #111; color: #fff; text-decoration: none; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;">Email us to cancel</a>
+    </div>
+  `;
 
   await transporter.sendMail({
     from: `"NV & more" <${process.env.GMAIL_USER}>`,
@@ -47,7 +69,8 @@ async function sendConfirmationEmail({
         <p>Hi ${name},</p>
         <p>Your booking is confirmed. We look forward to seeing you${dateLabel ? ` on <strong>${dateLabel}</strong>` : ""}.</p>
         ${amount > 0 ? `<p>Amount paid: <strong>${amount} ${currency}</strong></p>` : ""}
-        <p>If you have any questions, reply to this email or write us at <a href="mailto:nordvestandmore@gmail.com">nordvestandmore@gmail.com</a>.</p>
+        ${cancellationSection}
+        <p style="margin-top: 24px;">If you have any other questions, reply to this email or write us at <a href="mailto:nordvestandmore@gmail.com">nordvestandmore@gmail.com</a>.</p>
         <p style="font-size: 13px; color: #666;">You can read our <a href="https://nordvestandmore.com/terms">Terms of Sale</a> on our website.</p>
         <p style="margin-top: 32px;">See you soon,<br/>Constance<br/><br/><a href="https://www.instagram.com/nordvestandmore">@nordvestandmore</a><br/><a href="https://nordvestandmore.com">nordvestandmore.com</a></p>
       </div>
@@ -74,7 +97,8 @@ export async function POST(req: NextRequest) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
-    const { eventId, eventSlug, eventTitle, eventDate } = session.metadata ?? {};
+    const { eventId, eventSlug, eventTitle, eventDate, cancellationHours: cancellationHoursStr } = session.metadata ?? {};
+    const cancellationHours = cancellationHoursStr ? parseInt(cancellationHoursStr, 10) : undefined;
     const supabase = getSupabase();
     const name = session.customer_details?.name ?? "";
     const email = session.customer_details?.email ?? "";
@@ -134,7 +158,7 @@ export async function POST(req: NextRequest) {
     // Send confirmation email to booker
     if (email) {
       try {
-        await sendConfirmationEmail({ name, email, eventDate, amount, currency });
+        await sendConfirmationEmail({ name, email, eventDate, eventTitle, eventId, amount, currency, cancellationHours });
       } catch (err) {
         console.error("Email error:", err);
       }

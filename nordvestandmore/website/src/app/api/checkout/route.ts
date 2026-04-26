@@ -3,7 +3,7 @@ import { getStripe } from "@/lib/stripe";
 
 export async function POST(req: NextRequest) {
   try {
-    const { eventId, eventSlug, eventTitle, eventDate, price, currency, stripeProductId } =
+    const { eventId, eventSlug, eventTitle, eventDate, price, currency, stripeProductId, cancellationHours } =
       await req.json();
 
     const origin = req.headers.get("origin") || "https://nordvestandmore.com";
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       success_url: `${origin}/booking/success?session_id={CHECKOUT_SESSION_ID}&event=${eventSlug}`,
       cancel_url: `${origin}/with-us/${eventSlug}`,
       phone_number_collection: { enabled: true },
-      metadata: { eventId, eventSlug, ...(eventTitle ? { eventTitle } : {}), ...(eventDate ? { eventDate } : {}) },
+      metadata: { eventId, eventSlug, ...(eventTitle ? { eventTitle } : {}), ...(eventDate ? { eventDate } : {}), ...(cancellationHours != null ? { cancellationHours: String(cancellationHours) } : {}) },
     });
 
     return NextResponse.json({ url: session.url });
