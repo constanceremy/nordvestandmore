@@ -145,11 +145,12 @@ def send_email(events: list[dict], today: date, dry_run: bool):
         print("⚠️  GMAIL_APP_PASSWORD not set — skipping email")
         return
 
-    date_str = today.strftime("%-d %B %Y")
-    subject = f"NV Events — {len(events)} unapproved as of {date_str}" if events else f"NV Events — All approved ({date_str})"
+    tomorrow = today + timedelta(days=1)
+    date_str = tomorrow.strftime("%-d %B %Y")
+    subject = f"NV Events — {len(events)} unapproved tomorrow ({date_str})" if events else f"NV Events — No events tomorrow in need of approval ({date_str})"
 
     if not events:
-        body = "All upcoming events are approved. Nothing to review."
+        body = "No events tomorrow in need of approval."
     else:
         lines = [
             f"Unapproved upcoming events as of {date_str}.",
