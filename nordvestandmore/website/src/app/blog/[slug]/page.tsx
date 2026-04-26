@@ -85,11 +85,6 @@ export default async function BlogPostPage({
           {post.title}
         </h1>
 
-        {post.excerpt && (
-          <p className="text-xl text-gray-500 leading-relaxed border-l-2 border-black pl-4">
-            {post.excerpt}
-          </p>
-        )}
       </header>
 
       {/* Body */}
