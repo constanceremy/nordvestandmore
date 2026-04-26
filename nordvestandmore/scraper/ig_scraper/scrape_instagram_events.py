@@ -39,9 +39,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from dedup import load_source_mapping, find_duplicate, similarity, are_sources_related, get_source_priority
 from auto_tag import classify_event, classify_seasonal, is_not_event, is_deal, should_skip_entirely, is_excluded_location, is_unknown_location
 from hours_db import push_to_hours_db
-from locations_cache import find_location_id, find_location_coords
+from locations_cache import find_location_id, find_location_coords, find_location_id_by_ig_handle
 from deals_db import push_to_deals_db
 from fix_locations import clean_location
+
+class RateLimitedError(Exception):
+    """Raised when Instagram returns a fake 404 while we're authenticated — almost always rate limiting."""
+
 
 # -------------------- CONFIG --------------------
 SLUG = "INSTAGRAM"
@@ -206,6 +210,16 @@ def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
     try:
         profile = instaloader.Profile.from_username(L.context, username)
     except Exception as e:
+        is_not_found = (
+            isinstance(e, instaloader.exceptions.ProfileNotExistsException)
+            or "does not exist" in str(e).lower()
+        )
+        if is_not_found and _logged_in:
+            # When authenticated, "profile does not exist" is almost always Instagram
+            # rate-limiting with a fake 404 — not a genuinely missing account.
+            raise RateLimitedError(
+                f"@{username} returned 'does not exist' while authenticated — likely rate-limited"
+            ) from e
         log(f"Could not load @{username}: {e}")
         if auto_login_retry and not _logged_in:
             if try_login(L):
@@ -601,10 +615,11 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             desc = ev.get("description") or ""
             if desc:
                 props["Description"] = {"rich_text": [{"text": {"content": desc[:2000]}}]}
-        if ev.get("location"):
+        loc_id = find_location_id_by_ig_handle(ev.get("ig_handle", ""), NOTION_TOKEN)
+        if not loc_id and ev.get("location"):
             loc_id = find_location_id(ev["location"], NOTION_TOKEN, _gemini_client)
-            if loc_id:
-                props["Locations"] = {"relation": [{"id": loc_id}]}
+        if loc_id:
+            props["Locations"] = {"relation": [{"id": loc_id}]}
         return props
 
     props = {}
@@ -643,11 +658,12 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
         props["Location"] = {
             "rich_text": [{"text": {"content": ev["location"][:2000]}}]
         }
-    # Locations relation — always set when resolvable (derived data, not user-editable)
-    if ev.get("location"):
+    # Locations relation: try IG handle first (most reliable), then location text
+    loc_id = find_location_id_by_ig_handle(ev.get("ig_handle", ""), NOTION_TOKEN)
+    if not loc_id and ev.get("location"):
         loc_id = find_location_id(ev["location"], NOTION_TOKEN, _gemini_client)
-        if loc_id:
-            props["Locations"] = {"relation": [{"id": loc_id}]}
+    if loc_id:
+        props["Locations"] = {"relation": [{"id": loc_id}]}
 
     # Source (text) — e.g. "@account" or "LYGTEN_STATION"
     if ev.get("source"):
@@ -768,6 +784,14 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                                       auto_login_retry=auto_login_retry))
         profile_total = getattr(get_recent_posts, '_last_total_count', '?')
         latest_date = getattr(get_recent_posts, '_last_latest_date', None)
+    except RateLimitedError as e:
+        log(f"  🚦 Rate-limited: {e}")
+        return {
+            "created": 0, "updated": 0, "skipped": 0,
+            "flagged_dupes": 0, "total_events": 0,
+            "total_posts": 0, "profile_total": "?",
+            "latest_date": None, "rate_limited": True,
+        }
     except Exception as e:
         log(f"  ⚠️ Instagram error for @{account}: {e}")
         log(f"  Skipping @{account} (try again later — Instagram may be rate-limiting).")

@@ -22,6 +22,12 @@ LOCATIONS_DB = os.environ.get("NOTION_LOCATIONS_DB_ID", "33c375efa2cc8036b52bc40
 # normalized_name → {"id": page_id, "name": original_name, "lat": float|None, "lng": float|None}
 _cache: dict[str, dict] | None = None
 
+# normalized_ig_handle → page_id
+_ig_cache: dict[str, str] | None = None
+
+# normalized_fb_id → page_id  (FB page name or numeric ID extracted from URL)
+_fb_cache: dict[str, str] | None = None
+
 # Cache Gemini answers: location_text → page_id | None
 # Avoids repeated API calls for the same location string within a run.
 _gemini_cache: dict[str, str | None] = {}
@@ -35,7 +41,19 @@ def _normalize(text: str) -> str:
     return text
 
 
-def _load(notion_token: str) -> dict[str, dict]:
+def _extract_fb_id(url: str) -> str:
+    """Extract a normalised FB identifier from a URL (page name or numeric ID)."""
+    import re as _re
+    m = _re.search(r"[?&]id=(\d+)", url)
+    if m:
+        return m.group(1)
+    m = _re.search(r"facebook\.com/([^/?#]+)", url)
+    if m and m.group(1) not in ("profile.php", "events", "pages"):
+        return m.group(1).lower()
+    return url.lower()
+
+
+def _load(notion_token: str) -> tuple[dict[str, dict], dict[str, str], dict[str, str]]:
     headers = {
         "Authorization": f"Bearer {notion_token}",
         "Notion-Version": "2022-06-28",
@@ -59,34 +77,47 @@ def _load(notion_token: str) -> dict[str, dict]:
             break
         cursor = data.get("next_cursor")
 
-    lookup: dict[str, dict] = {}
+    name_lookup: dict[str, dict] = {}
+    ig_lookup:   dict[str, str]  = {}
+    fb_lookup:   dict[str, str]  = {}
+
     for page in results:
         props = page.get("properties", {})
         title_parts = props.get("Name", {}).get("title", [])
         name = "".join(t.get("plain_text", "") for t in title_parts).strip()
         if not name:
             continue
+        page_id = page["id"]
         lat_raw = props.get("Lat", {}).get("number")
         lng_raw = props.get("Lng", {}).get("number")
-        lookup[_normalize(name)] = {
-            "id": page["id"],
+        name_lookup[_normalize(name)] = {
+            "id": page_id,
             "name": name,
             "lat": float(lat_raw) if lat_raw is not None else None,
             "lng": float(lng_raw) if lng_raw is not None else None,
         }
-    return lookup
+
+        ig_raw = "".join(t.get("plain_text", "") for t in props.get("Instagram", {}).get("rich_text", [])).strip().lstrip("@")
+        if ig_raw:
+            ig_lookup[ig_raw.lower()] = page_id
+
+        fb_raw = (props.get("Facebook", {}).get("url") or "").strip()
+        if fb_raw:
+            fb_lookup[_extract_fb_id(fb_raw)] = page_id
+
+    return name_lookup, ig_lookup, fb_lookup
 
 
 def get_cache(notion_token: str) -> dict[str, dict]:
-    """Load locations cache lazily (once per process)."""
-    global _cache
+    """Load name cache lazily (once per process)."""
+    global _cache, _ig_cache, _fb_cache
     if _cache is None:
         try:
-            _cache = _load(notion_token)
-            print(f"[locations_cache] Loaded {len(_cache)} locations")
+            _cache, _ig_cache, _fb_cache = _load(notion_token)
+            print(f"[locations_cache] Loaded {len(_cache)} locations ({len(_ig_cache)} IG, {len(_fb_cache)} FB)")
         except Exception as e:
             print(f"[locations_cache] Failed to load: {e}")
-            _cache = {}
+            _cache, _ig_cache, _fb_cache = {}, {}, {}
     return _cache
 
 
@@ -172,6 +203,22 @@ def find_location_id(
     if gemini_client:
         return _ask_gemini(location_text, cache, gemini_client)
     return None
+
+
+def find_location_id_by_ig_handle(ig_handle: str, notion_token: str) -> str | None:
+    """Match an Instagram handle directly against the Locations DB Instagram field."""
+    if not ig_handle or not notion_token:
+        return None
+    get_cache(notion_token)
+    return _ig_cache.get(ig_handle.lstrip("@").lower())  # type: ignore[union-attr]
+
+
+def find_location_id_by_fb(fb_url: str, notion_token: str) -> str | None:
+    """Match a Facebook URL directly against the Locations DB Facebook field."""
+    if not fb_url or not notion_token:
+        return None
+    get_cache(notion_token)
+    return _fb_cache.get(_extract_fb_id(fb_url))  # type: ignore[union-attr]
 
 
 def find_location_coords(location_text: str, notion_token: str) -> tuple[float, float] | None:

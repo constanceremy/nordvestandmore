@@ -32,7 +32,7 @@ from auto_tag import classify_event, classify_seasonal, is_not_event, is_deal, s
 from hours_db import push_to_hours_db
 from deals_db import push_to_deals_db
 from fix_locations import clean_location
-from locations_cache import find_location_id, find_location_coords
+from locations_cache import find_location_id, find_location_coords, find_location_id_by_fb
 
 # -------------------- CONFIG --------------------
 SLUG = "FACEBOOK"
@@ -935,8 +935,10 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             desc = ev.get("description") or ""
             if desc:
                 props["Description"] = {"rich_text": [{"text": {"content": desc[:2000]}}]}
-        if ev.get("location"):
-            loc_id = find_location_id(ev["location"], NOTION_TOKEN, _gemini_client)
+        if ev.get("location") or ev.get("source"):
+            loc_id = find_location_id_by_fb(ev.get("source", ""), NOTION_TOKEN)
+            if not loc_id:
+                loc_id = find_location_id(ev.get("location", ""), NOTION_TOKEN, _gemini_client)
             if loc_id:
                 props["Locations"] = {"relation": [{"id": loc_id}]}
         return props
@@ -972,11 +974,12 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
         props["Location"] = {
             "rich_text": [{"text": {"content": ev["location"][:2000]}}]
         }
-    # Locations relation — always set when resolvable (derived data, not user-editable)
-    if ev.get("location"):
+    # Locations relation: try FB page URL first, then location text
+    loc_id = find_location_id_by_fb(ev.get("source", ""), NOTION_TOKEN)
+    if not loc_id and ev.get("location"):
         loc_id = find_location_id(ev["location"], NOTION_TOKEN)
-        if loc_id:
-            props["Locations"] = {"relation": [{"id": loc_id}]}
+    if loc_id:
+        props["Locations"] = {"relation": [{"id": loc_id}]}
 
     if ev.get("source"):
         props["Source"] = {
