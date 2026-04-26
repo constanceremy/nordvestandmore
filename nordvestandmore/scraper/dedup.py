@@ -28,29 +28,26 @@ follow these rules:
 """
 import csv
 import io
+import json
 import math
 import os
 import re
+import urllib.request
 from pathlib import Path
 
 MAPPING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "source_mapping.csv")
 
-# Google Sheets URL (public, read-only) — edit the sheet at:
-# https://docs.google.com/spreadsheets/d/1aKJo3jTLT8fSDDRFSIkRX9XU_MtrXalnVsJ7_T3UCCk/edit
-_GSHEET_CSV_URL = (
-    "https://docs.google.com/spreadsheets/d/"
-    "1aKJo3jTLT8fSDDRFSIkRX9XU_MtrXalnVsJ7_T3UCCk"
-    "/export?format=csv&gid=0"
-)
+NOTION_TOKEN    = os.environ.get("NOTION_TOKEN", "")
+LOCATIONS_DB_ID = "33c375efa2cc8036b52bc40db2aa42fb"
 
 # Cache the rows so we only fetch once per run
 _cached_rows: list[dict] | None = None
 
 
 def _load_csv_rows() -> list[dict]:
-    """Load source mapping rows from Google Sheets, falling back to local CSV.
+    """Load source mapping rows from Notion Locations DB, falling back to local CSV.
 
-    Returns a list of dicts (one per row) with keys matching the sheet headers:
+    Returns a list of dicts with keys:
     name, instagram, facebook, fb_filter, fb_exclude, website, priority
     """
     global _cached_rows
@@ -59,19 +56,48 @@ def _load_csv_rows() -> list[dict]:
 
     rows: list[dict] = []
 
-    # Try Google Sheets first
-    try:
-        import urllib.request
-        resp = urllib.request.urlopen(_GSHEET_CSV_URL, timeout=10)
-        text = resp.read().decode("utf-8")
-        reader = csv.DictReader(io.StringIO(text))
-        rows = list(reader)
-        if rows:
-            print(f"📋 Loaded {len(rows)} sources from Google Sheets")
-            _cached_rows = rows
-            return rows
-    except Exception as e:
-        print(f"📋 Google Sheets fetch failed ({e}), falling back to local CSV")
+    if NOTION_TOKEN:
+        try:
+            headers = {
+                "Authorization": f"Bearer {NOTION_TOKEN}",
+                "Notion-Version": "2022-06-28",
+                "Content-Type": "application/json",
+            }
+            cursor = None
+            while True:
+                payload: dict = {"page_size": 100}
+                if cursor:
+                    payload["start_cursor"] = cursor
+                req = urllib.request.Request(
+                    f"https://api.notion.com/v1/databases/{LOCATIONS_DB_ID}/query",
+                    data=json.dumps(payload).encode(),
+                    headers=headers,
+                    method="POST",
+                )
+                data = json.loads(urllib.request.urlopen(req, timeout=15).read())
+                for page in data.get("results", []):
+                    p = page["properties"]
+                    name = "".join(t["plain_text"] for t in p.get("Name", {}).get("title", []))
+                    if not name:
+                        continue
+                    rows.append({
+                        "name":       name,
+                        "instagram":  "".join(t["plain_text"] for t in p.get("Instagram", {}).get("rich_text", [])),
+                        "facebook":   (p.get("Facebook", {}).get("url") or ""),
+                        "fb_filter":  "".join(t["plain_text"] for t in p.get("fb_filter", {}).get("rich_text", [])),
+                        "fb_exclude": "".join(t["plain_text"] for t in p.get("fb_exclude", {}).get("rich_text", [])),
+                        "website":    (p.get("Website", {}).get("url") or ""),
+                        "priority":   str(p.get("Priority", {}).get("number") or ""),
+                    })
+                if not data.get("has_more"):
+                    break
+                cursor = data["next_cursor"]
+            if rows:
+                print(f"📋 Loaded {len(rows)} sources from Notion Locations DB")
+                _cached_rows = rows
+                return rows
+        except Exception as e:
+            print(f"📋 Notion fetch failed ({e}), falling back to local CSV")
 
     # Fallback to local CSV
     path = Path(MAPPING_FILE)
