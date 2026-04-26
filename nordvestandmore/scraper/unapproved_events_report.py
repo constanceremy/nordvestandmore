@@ -115,11 +115,11 @@ def send_ntfy(count: int, dry_run: bool):
         return
 
     if count == 0:
-        msg = "All future events are approved"
+        msg = "No events tomorrow in need of approval"
         title = "NV Events - All clear"
         priority = "low"
     else:
-        msg = f"{count} upcoming event{'s' if count != 1 else ''} need approval in Notion"
+        msg = f"{count} event{'s' if count != 1 else ''} tomorrow need{'s' if count == 1 else ''} approval in Notion"
         title = f"NV Events - {count} unapproved"
         priority = "default"
 
