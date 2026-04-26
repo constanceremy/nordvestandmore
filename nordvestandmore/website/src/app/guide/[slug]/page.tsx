@@ -1,4 +1,4 @@
-import { getLocations, getLocationBySlug, getEventsByLocation, getBlogPostsByLocation } from "@/lib/notion";
+import { getLocations, getEventsByLocation, getBlogPostsByLocation } from "@/lib/notion";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, MapPin } from "lucide-react";
@@ -10,7 +10,8 @@ export const revalidate = 3600;
 export const dynamicParams = true;
 
 export async function generateStaticParams() {
-  return [];
+  const locations = await getLocations();
+  return locations.map((l) => ({ slug: l.slug }));
 }
 
 export async function generateMetadata({
@@ -19,7 +20,8 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const location = await getLocationBySlug(slug);
+  const locations = await getLocations();
+  const location = locations.find((l) => l.slug === slug);
   if (!location) return {};
   return {
     title: `${location.name} | NV & more Guide`,
@@ -34,10 +36,8 @@ export default async function LocationPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const [location, allLocations] = await Promise.all([
-    getLocationBySlug(slug),
-    getLocations(),
-  ]);
+  const allLocations = await getLocations();
+  const location = allLocations.find((l) => l.slug === slug) ?? null;
   if (!location) notFound();
 
   const [events, posts] = await Promise.all([
