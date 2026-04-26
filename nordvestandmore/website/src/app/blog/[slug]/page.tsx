@@ -1,8 +1,8 @@
-import { getBlogPostBySlug, getBlogPosts, getPageBlocks } from "@/lib/notion";
+import { getBlogPostBySlug, getBlogPosts, getPageBlocks, getLocations } from "@/lib/notion";
 import { notFound } from "next/navigation";
 import NotionBlocks from "@/components/NotionBlocks";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MapPin } from "lucide-react";
 import type { Metadata } from "next";
 
 export async function generateMetadata({
@@ -49,7 +49,11 @@ export default async function BlogPostPage({
   const post = await getBlogPostBySlug(slug);
   if (!post) notFound();
 
-  const blocks = await getPageBlocks(post.id);
+  const [blocks, allLocations] = await Promise.all([
+    getPageBlocks(post.id),
+    post.locationIds.length > 0 ? getLocations() : Promise.resolve([]),
+  ]);
+  const postLocations = allLocations.filter((l) => post.locationIds.includes(l.id));
 
   return (
     <article className="max-w-3xl mx-auto px-6 py-16">
@@ -92,6 +96,27 @@ export default async function BlogPostPage({
       <div className="prose prose-lg max-w-none">
         <NotionBlocks blocks={blocks} />
       </div>
+
+      {/* Places in this article */}
+      {postLocations.length > 0 && (
+        <div className="mt-12 pt-8 border-t border-black">
+          <p className="text-xs font-semibold tracking-widest uppercase text-gray-400 mb-4">
+            Places in this article
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {postLocations.map((loc) => (
+              <Link
+                key={loc.id}
+                href={`/guide/${loc.slug}`}
+                className="inline-flex items-center gap-1.5 border border-black px-3 py-1.5 text-xs font-semibold tracking-widest uppercase hover:bg-black hover:text-white transition-colors"
+              >
+                <MapPin size={10} />
+                {loc.name}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </article>
   );
 }
