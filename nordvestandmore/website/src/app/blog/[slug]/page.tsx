@@ -51,7 +51,7 @@ export default async function BlogPostPage({
 
   const [blocks, allLocations] = await Promise.all([
     getPageBlocks(post.id),
-    post.locationIds.length > 0 ? getLocations() : Promise.resolve([]),
+    post.locationIds.length > 0 ? getLocations().catch(() => []) : Promise.resolve([]),
   ]);
   const postLocations = allLocations.filter((l) => post.locationIds.includes(l.id));
 
