@@ -3,7 +3,7 @@ import { getStripe } from "@/lib/stripe";
 
 export async function POST(req: NextRequest) {
   try {
-    const { eventId, eventSlug, eventTitle, eventDate, price, currency, stripeProductId, cancellationHours } =
+    const { eventId, eventSlug, eventTitle, eventDate, price, currency, stripeProductId, cancellationHours, requiresConfirmation } =
       await req.json();
 
     const origin = req.headers.get("origin") || "https://nordvestandmore.com";
@@ -11,6 +11,7 @@ export async function POST(req: NextRequest) {
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
+      ...(requiresConfirmation ? { payment_intent_data: { capture_method: "manual" } } : {}),
       line_items: [
         {
           quantity: 1,
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
       success_url: `${origin}/booking/success?session_id={CHECKOUT_SESSION_ID}&event=${eventSlug}`,
       cancel_url: `${origin}/with-us/${eventSlug}`,
       phone_number_collection: { enabled: true },
-      metadata: { eventId, eventSlug, ...(eventTitle ? { eventTitle } : {}), ...(eventDate ? { eventDate } : {}), ...(cancellationHours != null ? { cancellationHours: String(cancellationHours) } : {}) },
+      metadata: { eventId, eventSlug, ...(eventTitle ? { eventTitle } : {}), ...(eventDate ? { eventDate } : {}), ...(cancellationHours != null ? { cancellationHours: String(cancellationHours) } : {}), ...(requiresConfirmation ? { requiresConfirmation: "true" } : {}) },
     });
 
     return NextResponse.json({ url: session.url });

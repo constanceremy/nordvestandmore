@@ -13,6 +13,7 @@ type Props = {
   stripeProductId?: string;
   soldOut: boolean;
   cancellationHours?: number;
+  requiresConfirmation?: boolean;
 };
 
 export default function BookButton({
@@ -25,6 +26,7 @@ export default function BookButton({
   stripeProductId,
   soldOut,
   cancellationHours,
+  requiresConfirmation,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -36,7 +38,7 @@ export default function BookButton({
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventId, eventSlug, eventTitle, eventDate, price, currency, stripeProductId, cancellationHours }),
+        body: JSON.stringify({ eventId, eventSlug, eventTitle, eventDate, price, currency, stripeProductId, cancellationHours, requiresConfirmation }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong");
@@ -71,9 +73,18 @@ export default function BookButton({
             Redirecting to payment…
           </>
         ) : (
-          price === 0 ? "Reserve my spot — Free" : `Book now — ${price} ${currency}`
+          price === 0
+            ? "Reserve my spot — Free"
+            : requiresConfirmation
+            ? `Reserve my spot — ${price} ${currency}`
+            : `Book now — ${price} ${currency}`
         )}
       </button>
+      {requiresConfirmation && (
+        <p className="text-xs text-gray-500 mt-3 text-center">
+          Your card won&apos;t be charged until we confirm this event is going ahead.
+        </p>
+      )}
       {error && (
         <p className="text-red-500 text-sm mt-2 text-center">{error}</p>
       )}

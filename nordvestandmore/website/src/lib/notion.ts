@@ -251,6 +251,7 @@ export type Experience = {
   bookingPolicyId?: string;
   active: boolean;
   privateOnRequest: boolean;
+  requiresConfirmation: boolean;
 };
 
 export type Session = {
@@ -338,6 +339,7 @@ export async function getExperiences(activeOnly = true): Promise<Experience[]> {
         bookingPolicyId: getRelationId(p["Booking policy"]),
         active: getCheckbox(p["Active"]),
         privateOnRequest: getCheckbox(p["Private / On Request"]),
+        requiresConfirmation: getCheckbox(p["Requires Confirmation"]),
       };
     });
 }

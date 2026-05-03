@@ -212,10 +212,13 @@ export default async function SessionPage({
               stripeProductId={exp.stripeProductId}
               soldOut={soldOut}
               cancellationHours={policy?.cancellationWindow}
+              requiresConfirmation={exp.requiresConfirmation}
             />
 
             <p className="text-xs text-gray-400 mt-3 text-center">
-              Secure payment via Stripe. You'll receive a confirmation email.
+              {exp.requiresConfirmation
+                ? "Secure payment via Stripe. Card authorized but not charged until we confirm the event."
+                : "Secure payment via Stripe. You'll receive a confirmation email."}
             </p>
           </div>
 

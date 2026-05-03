@@ -15,6 +15,56 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+async function sendReservationEmail({
+  name,
+  email,
+  eventDate,
+  eventTitle,
+  eventId,
+  amount,
+  currency,
+}: {
+  name: string;
+  email: string;
+  eventDate?: string;
+  eventTitle?: string;
+  eventId?: string;
+  amount: number;
+  currency: string;
+}) {
+  const dateLabel = eventDate
+    ? new Date(eventDate).toLocaleDateString("en-DK", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    : "";
+  const policyUrl = eventId ? `https://nordvestandmore.com/with-us/${eventId}` : "https://nordvestandmore.com/with-us";
+
+  await transporter.sendMail({
+    from: `"NV & more" <${process.env.GMAIL_USER}>`,
+    to: email,
+    subject: "Your spot is reserved — NV & more",
+    html: `
+      <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #111;">
+        <h2 style="font-size: 24px; margin-bottom: 8px;">You're reserved!</h2>
+        <p>Hi ${name},</p>
+        <p>Your spot is held${eventTitle ? ` for <strong>${eventTitle}</strong>` : ""}${dateLabel ? ` on <strong>${dateLabel}</strong>` : ""}. We're confirming the event is going ahead and will be in touch soon.</p>
+        <p><strong>Your card has not been charged yet.</strong> You'll only be billed once we confirm the event is happening — we'll send you a confirmation email at that point.</p>
+        ${amount > 0 ? `<p>Amount to be charged if confirmed: <strong>${amount} ${currency}</strong></p>` : ""}
+        <div style="margin-top: 24px; padding: 16px; border: 1px solid #e5e7eb; background: #f9fafb;">
+          <p style="margin: 0 0 8px 0; font-weight: 600; font-size: 14px;">Need to cancel your reservation?</p>
+          <p style="margin: 0 0 12px 0; font-size: 14px; color: #374151;">Just reply to this email or write us at <a href="mailto:nordvestandmore@gmail.com">nordvestandmore@gmail.com</a>.</p>
+          <p style="margin: 0; font-size: 13px;"><a href="${policyUrl}" style="color: #111;">View booking policy →</a></p>
+        </div>
+        <p style="margin-top: 24px;">If you have any questions, reply to this email.</p>
+        <p style="margin-top: 32px;">See you soon,<br/>Constance<br/><br/><a href="https://www.instagram.com/nordvestandmore">@nordvestandmore</a><br/><a href="https://nordvestandmore.com">nordvestandmore.com</a></p>
+      </div>
+    `,
+  });
+}
+
 async function sendConfirmationEmail({
   name,
   email,
@@ -97,8 +147,9 @@ export async function POST(req: NextRequest) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
-    const { eventId, eventSlug, eventTitle, eventDate, cancellationHours: cancellationHoursStr } = session.metadata ?? {};
+    const { eventId, eventSlug, eventTitle, eventDate, cancellationHours: cancellationHoursStr, requiresConfirmation: requiresConfirmationStr } = session.metadata ?? {};
     const cancellationHours = cancellationHoursStr ? parseInt(cancellationHoursStr, 10) : undefined;
+    const requiresConfirmation = requiresConfirmationStr === "true";
     const supabase = getSupabase();
     const name = session.customer_details?.name ?? "";
     const email = session.customer_details?.email ?? "";
@@ -120,6 +171,7 @@ export async function POST(req: NextRequest) {
     const { error } = await supabase.from("bookings").insert({
       event_id: eventId,
       event_slug: eventSlug,
+      event_title: eventTitle ?? null,
       event_date: eventDate ?? null,
       name,
       email,
@@ -128,7 +180,7 @@ export async function POST(req: NextRequest) {
       stripe_payment_intent: session.payment_intent as string,
       amount_paid: amount,
       currency,
-      status: "confirmed",
+      status: requiresConfirmation ? "pending" : "confirmed",
     });
 
     if (error) {
@@ -155,10 +207,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Send confirmation email to booker
+    // Send email to booker
     if (email) {
       try {
-        await sendConfirmationEmail({ name, email, eventDate, eventTitle, eventId, amount, currency, cancellationHours });
+        if (requiresConfirmation) {
+          await sendReservationEmail({ name, email, eventDate, eventTitle, eventId, amount, currency });
+        } else {
+          await sendConfirmationEmail({ name, email, eventDate, eventTitle, eventId, amount, currency, cancellationHours });
+        }
       } catch (err) {
         console.error("Email error:", err);
       }
@@ -166,14 +222,28 @@ export async function POST(req: NextRequest) {
 
     // Notify Constance
     try {
+      const captureSecret = process.env.CAPTURE_SECRET ?? "";
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://nordvestandmore.vercel.app";
+      const captureUrl = `${baseUrl}/api/capture?session=${eventId}&action=capture&secret=${captureSecret}`;
+      const cancelUrl = `${baseUrl}/api/capture?session=${eventId}&action=cancel&secret=${captureSecret}`;
+
+      const pendingActions = requiresConfirmation ? `
+        <div style="margin-top: 24px; padding: 16px; border: 1px solid #e5e7eb; background: #f9fafb;">
+          <p style="margin: 0 0 12px 0; font-weight: 600;">This booking requires your confirmation.</p>
+          <p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">These links act on <strong>all pending reservations</strong> for this session at once.</p>
+          <a href="${captureUrl}" style="display: inline-block; margin-right: 12px; padding: 10px 20px; background: #111; color: #fff; text-decoration: none; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;">Confirm all &amp; charge</a>
+          <a href="${cancelUrl}" style="display: inline-block; padding: 10px 20px; background: #fff; color: #dc2626; border: 1px solid #dc2626; text-decoration: none; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;">Cancel session &amp; release all</a>
+        </div>
+      ` : "";
+
       await transporter.sendMail({
         from: `"NV & more" <${process.env.GMAIL_USER}>`,
         to: process.env.GMAIL_USER,
         replyTo: email,
-        subject: `New booking — ${eventTitle ?? eventSlug ?? "event"}${eventDate ? ` — ${eventDate}` : ""}`,
+        subject: `${requiresConfirmation ? "New reservation (pending)" : "New booking"} — ${eventTitle ?? eventSlug ?? "event"}${eventDate ? ` — ${eventDate}` : ""}`,
         html: `
           <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #111;">
-            <h2 style="font-size: 20px; margin-bottom: 16px;">New booking</h2>
+            <h2 style="font-size: 20px; margin-bottom: 16px;">${requiresConfirmation ? "New reservation — pending your confirmation" : "New booking"}</h2>
             <table style="width: 100%; border-collapse: collapse;">
               <tr><td style="padding: 8px 0; color: #666; width: 140px;">Name</td><td style="padding: 8px 0;">${name}</td></tr>
               <tr><td style="padding: 8px 0; color: #666;">Email</td><td style="padding: 8px 0;"><a href="mailto:${email}">${email}</a></td></tr>
@@ -181,8 +251,9 @@ export async function POST(req: NextRequest) {
               <tr><td style="padding: 8px 0; color: #666;">Event</td><td style="padding: 8px 0;"><strong>${eventTitle ?? "—"}</strong></td></tr>
               <tr><td style="padding: 8px 0; color: #666;">Session ID</td><td style="padding: 8px 0;">${eventSlug ?? "—"}</td></tr>
               <tr><td style="padding: 8px 0; color: #666;">Date</td><td style="padding: 8px 0;">${eventDate ?? "—"}</td></tr>
-              <tr><td style="padding: 8px 0; color: #666;">Amount paid</td><td style="padding: 8px 0;">${amount} ${currency}</td></tr>
+              <tr><td style="padding: 8px 0; color: #666;">${requiresConfirmation ? "Amount to charge" : "Amount paid"}</td><td style="padding: 8px 0;">${amount} ${currency}</td></tr>
             </table>
+            ${pendingActions}
             <p style="margin-top: 24px; color: #666; font-size: 13px;">Reply to this email to contact ${name}.</p>
           </div>
         `,
