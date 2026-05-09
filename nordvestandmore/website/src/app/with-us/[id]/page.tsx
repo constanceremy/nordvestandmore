@@ -67,7 +67,7 @@ export default async function SessionPage({
         className="inline-flex items-center gap-2 text-sm font-medium tracking-widest uppercase hover:opacity-50 transition-opacity mb-12"
       >
         <ArrowLeft size={14} />
-        With us
+        Our events
       </Link>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">

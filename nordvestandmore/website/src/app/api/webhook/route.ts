@@ -45,7 +45,21 @@ async function sendReservationEmail({
   await transporter.sendMail({
     from: `"NV & more" <${process.env.GMAIL_USER}>`,
     to: email,
-    subject: "Your spot is reserved — NV & more",
+    subject: "Your spot is reserved - NV & more",
+    text: `Hi ${name},
+
+Your spot is held${eventTitle ? ` for ${eventTitle}` : ""}${dateLabel ? ` on ${dateLabel}` : ""}. We're confirming the event is going ahead and will be in touch soon.
+
+Your card has not been charged yet. You'll only be billed once we confirm the event is happening.
+${amount > 0 ? `\nAmount to be charged if confirmed: ${amount} ${currency}\n` : ""}
+Need to cancel your reservation? Just reply to this email or write us at nordvestandmore@gmail.com.
+
+Booking policy: ${policyUrl}
+
+See you soon,
+Constance
+@nordvestandmore
+nordvestandmore.com`,
     html: `
       <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #111;">
         <h2 style="font-size: 24px; margin-bottom: 8px;">You're reserved!</h2>
@@ -56,7 +70,7 @@ async function sendReservationEmail({
         <div style="margin-top: 24px; padding: 16px; border: 1px solid #e5e7eb; background: #f9fafb;">
           <p style="margin: 0 0 8px 0; font-weight: 600; font-size: 14px;">Need to cancel your reservation?</p>
           <p style="margin: 0 0 12px 0; font-size: 14px; color: #374151;">Just reply to this email or write us at <a href="mailto:nordvestandmore@gmail.com">nordvestandmore@gmail.com</a>.</p>
-          <p style="margin: 0; font-size: 13px;"><a href="${policyUrl}" style="color: #111;">View booking policy →</a></p>
+          <p style="margin: 0; font-size: 13px;"><a href="${policyUrl}" style="color: #111;">View booking policy</a></p>
         </div>
         <p style="margin-top: 24px;">If you have any questions, reply to this email.</p>
         <p style="margin-top: 32px;">See you soon,<br/>Constance<br/><br/><a href="https://www.instagram.com/nordvestandmore">@nordvestandmore</a><br/><a href="https://nordvestandmore.com">nordvestandmore.com</a></p>
@@ -109,10 +123,28 @@ async function sendConfirmationEmail({
     </div>
   `;
 
+  const cancellationNote = cancellationHours && cancellationHours > 0
+    ? `Please contact us at least ${cancellationHours} hours before the event if you need to cancel.`
+    : "Please contact us as soon as possible if you need to cancel.";
+
   await transporter.sendMail({
     from: `"NV & more" <${process.env.GMAIL_USER}>`,
     to: email,
-    subject: "Your booking is confirmed — NV & more",
+    subject: "Your booking is confirmed - NV & more",
+    text: `Hi ${name},
+
+Your booking is confirmed. We look forward to seeing you${dateLabel ? ` on ${dateLabel}` : ""}.
+${amount > 0 ? `\nAmount paid: ${amount} ${currency}\n` : ""}
+Need to cancel? ${cancellationNote}
+Email us: nordvestandmore@gmail.com
+Booking policy: ${policyUrl}
+
+Terms of Sale: https://nordvestandmore.com/terms
+
+See you soon,
+Constance
+@nordvestandmore
+nordvestandmore.com`,
     html: `
       <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #111;">
         <h2 style="font-size: 24px; margin-bottom: 8px;">You're booked!</h2>

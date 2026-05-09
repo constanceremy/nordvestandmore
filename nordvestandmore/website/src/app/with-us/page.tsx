@@ -5,10 +5,10 @@ import type { Metadata } from "next";
 import PrivateExperienceSection from "@/components/PrivateExperienceSection";
 
 export const metadata: Metadata = {
-  title: "With Us | NV & more",
+  title: "Our Events | NV & more",
   description: "Events and experiences led by NV & more — neighbourhood walks and more in Nordvest, Copenhagen.",
   openGraph: {
-    title: "With Us | NV & more",
+    title: "Our Events | NV & more",
     description: "Events and experiences led by NV & more in Nordvest, Copenhagen.",
   },
 };
@@ -40,7 +40,7 @@ export default async function WithUsPage() {
           Led by NV & more
         </p>
         <h1 className="text-5xl md:text-7xl" style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}>
-          With us
+          Our events
         </h1>
         <p className="mt-6 text-sm text-gray-500 max-w-lg leading-relaxed">
           Events and experiences we run ourselves — in and around Nordvest.

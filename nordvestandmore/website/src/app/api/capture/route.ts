@@ -43,7 +43,18 @@ async function sendConfirmedEmail(booking: Booking) {
   await transporter.sendMail({
     from: `"NV & more" <${process.env.GMAIL_USER}>`,
     to: booking.email,
-    subject: "Your booking is confirmed — NV & more",
+    subject: "Your booking is confirmed - NV & more",
+    text: `Hi ${booking.name},
+
+Great news - the event is confirmed and we look forward to seeing you${dateLabel ? ` on ${dateLabel}` : ""}.
+${booking.amount_paid > 0 ? `\nAmount charged: ${booking.amount_paid} ${booking.currency}\n` : ""}
+Need to cancel? Reply to this email or write us at nordvestandmore@gmail.com.
+Booking policy: ${policyUrl}
+
+See you soon,
+Constance
+@nordvestandmore
+nordvestandmore.com`,
     html: `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#111;">
         <h2 style="font-size:24px;margin-bottom:8px;">You're booked!</h2>
@@ -53,7 +64,7 @@ async function sendConfirmedEmail(booking: Booking) {
         <div style="margin-top:24px;padding:16px;border:1px solid #e5e7eb;background:#f9fafb;">
           <p style="margin:0 0 8px 0;font-weight:600;font-size:14px;">Need to cancel?</p>
           <p style="margin:0 0 8px 0;font-size:14px;color:#374151;">Reply to this email or write us at <a href="mailto:nordvestandmore@gmail.com">nordvestandmore@gmail.com</a>.</p>
-          <p style="margin:0;font-size:13px;"><a href="${policyUrl}" style="color:#111;">View booking policy →</a></p>
+          <p style="margin:0;font-size:13px;"><a href="${policyUrl}" style="color:#111;">View booking policy</a></p>
         </div>
         <p style="margin-top:32px;">See you soon,<br/>Constance<br/><br/><a href="https://www.instagram.com/nordvestandmore">@nordvestandmore</a></p>
       </div>
@@ -65,7 +76,17 @@ async function sendCancelledEmail(booking: Booking) {
   await transporter.sendMail({
     from: `"NV & more" <${process.env.GMAIL_USER}>`,
     to: booking.email,
-    subject: "Update on your reservation — NV & more",
+    subject: "Update on your reservation - NV & more",
+    text: `Hi ${booking.name},
+
+Unfortunately${booking.event_title ? ` ${booking.event_title}` : " the event"} isn't going ahead. Your reservation has been cancelled and no charge was made to your card.
+
+We hope to see you at a future event - keep an eye on nordvestandmore.com for what's coming up.
+
+Thanks for your understanding,
+Constance
+@nordvestandmore
+nordvestandmore.com`,
     html: `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#111;">
         <h2 style="font-size:24px;margin-bottom:8px;">Event update</h2>

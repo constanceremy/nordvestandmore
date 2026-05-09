@@ -69,7 +69,7 @@ export default function GuideMap({ locations, activeSlug }: Props) {
     <div
       id="guide-map"
       className="w-full h-full"
-      style={{ minHeight: "100%" }}
+      style={{ minHeight: "100%", isolation: "isolate" }}
     />
   );
 }
