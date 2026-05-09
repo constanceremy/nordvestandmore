@@ -13,7 +13,7 @@ const links = [
   { href: "/events", label: "Events" },
   { href: "/guide", label: "Guide" },
   { href: "/blog", label: "Blog" },
-  { href: "/with-us", label: "Our events" },
+  { href: "/our-events", label: "Our events" },
   { href: "/about", label: "About" },
 ];
 

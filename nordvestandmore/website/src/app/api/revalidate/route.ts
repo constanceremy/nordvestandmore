@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
 
   revalidatePath("/");
   revalidatePath("/events");
-  revalidatePath("/with-us");
+  revalidatePath("/our-events");
   revalidatePath("/blog");
 
   return NextResponse.json({ revalidated: true });

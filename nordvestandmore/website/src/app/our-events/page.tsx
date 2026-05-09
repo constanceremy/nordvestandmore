@@ -144,7 +144,7 @@ export default async function WithUsPage() {
             ) : (
               <Link
                 key={session.id}
-                href={`/with-us/${session.id}`}
+                href={`/our-events/${session.id}`}
                 className="group grid grid-cols-[80px_1fr_auto] md:grid-cols-[100px_1fr_200px_auto] items-center gap-6 py-8 hover:bg-black hover:text-white transition-colors px-2 -mx-2"
               >
                 {sharedContent}

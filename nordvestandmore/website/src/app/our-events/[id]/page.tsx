@@ -63,7 +63,7 @@ export default async function SessionPage({
     <div className="max-w-6xl mx-auto px-6 py-16">
       {/* Back */}
       <Link
-        href="/with-us"
+        href="/our-events"
         className="inline-flex items-center gap-2 text-sm font-medium tracking-widest uppercase hover:opacity-50 transition-opacity mb-12"
       >
         <ArrowLeft size={14} />

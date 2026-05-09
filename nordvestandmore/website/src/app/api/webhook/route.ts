@@ -40,7 +40,7 @@ async function sendReservationEmail({
         year: "numeric",
       })
     : "";
-  const policyUrl = eventId ? `https://nordvestandmore.com/with-us/${eventId}` : "https://nordvestandmore.com/with-us";
+  const policyUrl = eventId ? `https://nordvestandmore.com/our-events/${eventId}` : "https://nordvestandmore.com/our-events";
 
   await transporter.sendMail({
     from: `"NV & more" <${process.env.GMAIL_USER}>`,
@@ -109,7 +109,7 @@ async function sendConfirmationEmail({
 
   const cancellationSubject = `Booking Cancellation -- ${eventTitle || "event"} -- ${dateLabel || eventDate || ""} -- ${name}`;
   const cancellationMailto = `mailto:nordvestandmore@gmail.com?subject=${encodeURIComponent(cancellationSubject)}`;
-  const policyUrl = eventId ? `https://nordvestandmore.com/with-us/${eventId}` : "https://nordvestandmore.com/with-us";
+  const policyUrl = eventId ? `https://nordvestandmore.com/our-events/${eventId}` : "https://nordvestandmore.com/our-events";
 
   const cancellationSection = `
     <div style="margin-top: 24px; padding: 16px; border: 1px solid #e5e7eb; background: #f9fafb;">

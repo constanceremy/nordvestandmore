@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
         },
       ],
       success_url: `${origin}/booking/success?session_id={CHECKOUT_SESSION_ID}&event=${eventSlug}`,
-      cancel_url: `${origin}/with-us/${eventSlug}`,
+      cancel_url: `${origin}/our-events/${eventSlug}`,
       allow_promotion_codes: true,
       phone_number_collection: { enabled: true },
       metadata: { eventId, eventSlug, ...(eventTitle ? { eventTitle } : {}), ...(eventDate ? { eventDate } : {}), ...(cancellationHours != null ? { cancellationHours: String(cancellationHours) } : {}), ...(requiresConfirmation ? { requiresConfirmation: "true" } : {}) },

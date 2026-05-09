@@ -38,8 +38,8 @@ async function sendConfirmedEmail(booking: Booking) {
     ? new Date(booking.event_date).toLocaleDateString("en-DK", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
     : "";
   const policyUrl = booking.event_id
-    ? `https://nordvestandmore.com/with-us/${booking.event_id}`
-    : "https://nordvestandmore.com/with-us";
+    ? `https://nordvestandmore.com/our-events/${booking.event_id}`
+    : "https://nordvestandmore.com/our-events";
   await transporter.sendMail({
     from: `"NV & more" <${process.env.GMAIL_USER}>`,
     to: booking.email,
@@ -92,7 +92,7 @@ nordvestandmore.com`,
         <h2 style="font-size:24px;margin-bottom:8px;">Event update</h2>
         <p>Hi ${booking.name},</p>
         <p>Unfortunately${booking.event_title ? ` <strong>${booking.event_title}</strong>` : " the event"} isn't going ahead. Your reservation has been cancelled and <strong>no charge was made</strong> to your card.</p>
-        <p>We hope to see you at a future event — keep an eye on <a href="https://nordvestandmore.com/with-us">nordvestandmore.com</a> for what's coming up.</p>
+        <p>We hope to see you at a future event — keep an eye on <a href="https://nordvestandmore.com/our-events">nordvestandmore.com</a> for what's coming up.</p>
         <p style="margin-top:32px;">Thanks for your understanding,<br/>Constance<br/><br/><a href="https://www.instagram.com/nordvestandmore">@nordvestandmore</a></p>
       </div>
     `,
