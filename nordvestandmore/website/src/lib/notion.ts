@@ -252,6 +252,7 @@ export type Experience = {
   active: boolean;
   privateOnRequest: boolean;
   requiresConfirmation: boolean;
+  dietaryQuestions: boolean;
 };
 
 export type Session = {
@@ -340,6 +341,7 @@ export async function getExperiences(activeOnly = true): Promise<Experience[]> {
         active: getCheckbox(p["Active"]),
         privateOnRequest: getCheckbox(p["Private / On Request"]),
         requiresConfirmation: getCheckbox(p["requiresConfirmation"]),
+        dietaryQuestions: getCheckbox(p["Dietary questions"]),
       };
     });
 }

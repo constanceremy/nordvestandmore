@@ -213,6 +213,7 @@ export default async function SessionPage({
               soldOut={soldOut}
               cancellationHours={policy?.cancellationWindow}
               requiresConfirmation={exp.requiresConfirmation}
+              dietaryQuestions={exp.dietaryQuestions}
             />
 
             <p className="text-xs text-gray-400 mt-3 text-center">

@@ -259,6 +259,14 @@ export async function POST(req: NextRequest) {
       const captureUrl = `${baseUrl}/api/capture?session=${eventId}&action=capture&secret=${captureSecret}`;
       const cancelUrl = `${baseUrl}/api/capture?session=${eventId}&action=cancel&secret=${captureSecret}`;
 
+      const customFields = session.custom_fields ?? [];
+      const vegetarian = customFields.find((f: { key: string }) => f.key === "vegetarian") as { dropdown?: { value?: string } } | undefined;
+      const dietaryNotes = customFields.find((f: { key: string }) => f.key === "dietary_notes") as { text?: { value?: string } } | undefined;
+      const dietaryRow = (vegetarian || dietaryNotes) ? `
+        <tr><td style="padding: 8px 0; color: #666; width: 140px;">Vegetarian</td><td style="padding: 8px 0;">${vegetarian?.dropdown?.value === "yes" ? "Yes" : vegetarian?.dropdown?.value === "no" ? "No" : "—"}</td></tr>
+        ${dietaryNotes?.text?.value ? `<tr><td style="padding: 8px 0; color: #666;">Dietary notes</td><td style="padding: 8px 0;">${dietaryNotes.text.value}</td></tr>` : ""}
+      ` : "";
+
       const pendingActions = requiresConfirmation ? `
         <div style="margin-top: 24px; padding: 16px; border: 1px solid #e5e7eb; background: #f9fafb;">
           <p style="margin: 0 0 12px 0; font-weight: 600;">This booking requires your confirmation.</p>
@@ -284,6 +292,7 @@ export async function POST(req: NextRequest) {
               <tr><td style="padding: 8px 0; color: #666;">Session ID</td><td style="padding: 8px 0;">${eventSlug ?? "—"}</td></tr>
               <tr><td style="padding: 8px 0; color: #666;">Date</td><td style="padding: 8px 0;">${eventDate ?? "—"}</td></tr>
               <tr><td style="padding: 8px 0; color: #666;">${requiresConfirmation ? "Amount to charge" : "Amount paid"}</td><td style="padding: 8px 0;">${amount} ${currency}</td></tr>
+              ${dietaryRow}
             </table>
             ${pendingActions}
             <p style="margin-top: 24px; color: #666; font-size: 13px;">Reply to this email to contact ${name}.</p>

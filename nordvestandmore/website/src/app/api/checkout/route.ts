@@ -3,7 +3,7 @@ import { getStripe } from "@/lib/stripe";
 
 export async function POST(req: NextRequest) {
   try {
-    const { eventId, eventSlug, eventTitle, eventDate, price, currency, stripeProductId, cancellationHours, requiresConfirmation } =
+    const { eventId, eventSlug, eventTitle, eventDate, price, currency, stripeProductId, cancellationHours, requiresConfirmation, dietaryQuestions } =
       await req.json();
 
     console.log("Checkout payload:", { eventId, eventSlug, eventTitle, eventDate, price, currency, stripeProductId, cancellationHours, requiresConfirmation });
@@ -30,6 +30,24 @@ export async function POST(req: NextRequest) {
       cancel_url: `${origin}/our-events/${eventSlug}`,
       allow_promotion_codes: true,
       phone_number_collection: { enabled: true },
+      ...(dietaryQuestions ? {
+        custom_fields: [
+          {
+            key: "vegetarian",
+            label: { type: "custom" as const, custom: "Are you vegetarian?" },
+            type: "dropdown" as const,
+            dropdown: { options: [{ label: "No", value: "no" }, { label: "Yes", value: "yes" }] },
+            optional: true,
+          },
+          {
+            key: "dietary_notes",
+            label: { type: "custom" as const, custom: "Allergies or dietary notes" },
+            type: "text" as const,
+            text: { maximum_length: 300 },
+            optional: true,
+          },
+        ],
+      } : {}),
       metadata: { eventId, eventSlug, ...(eventTitle ? { eventTitle } : {}), ...(eventDate ? { eventDate } : {}), ...(cancellationHours != null ? { cancellationHours: String(cancellationHours) } : {}), ...(requiresConfirmation ? { requiresConfirmation: "true" } : {}) },
     });
 
