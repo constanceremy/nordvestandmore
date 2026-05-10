@@ -6,7 +6,8 @@ export async function POST(req: NextRequest) {
     const { eventId, eventSlug, eventTitle, eventDate, price, currency, stripeProductId, cancellationHours, requiresConfirmation } =
       await req.json();
 
-const origin = req.headers.get("origin") || "https://nordvestandmore.com";
+    console.log("Checkout payload:", { eventId, eventSlug, eventTitle, eventDate, price, currency, stripeProductId, cancellationHours, requiresConfirmation });
+    const origin = req.headers.get("origin") || "https://nordvestandmore.com";
     const stripe = getStripe();
 
     const session = await stripe.checkout.sessions.create({
