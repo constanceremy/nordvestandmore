@@ -261,10 +261,8 @@ export async function POST(req: NextRequest) {
 
       const customFields = session.custom_fields ?? [];
       const vegetarian = customFields.find((f: { key: string }) => f.key === "vegetarian") as { dropdown?: { value?: string } } | undefined;
-      const dietaryNotes = customFields.find((f: { key: string }) => f.key === "dietary_notes") as { text?: { value?: string } } | undefined;
-      const dietaryRow = (vegetarian || dietaryNotes) ? `
-        <tr><td style="padding: 8px 0; color: #666; width: 140px;">Vegetarian</td><td style="padding: 8px 0;">${vegetarian?.dropdown?.value === "yes" ? "Yes" : vegetarian?.dropdown?.value === "no" ? "No" : "—"}</td></tr>
-        ${dietaryNotes?.text?.value ? `<tr><td style="padding: 8px 0; color: #666;">Dietary notes</td><td style="padding: 8px 0;">${dietaryNotes.text.value}</td></tr>` : ""}
+      const dietaryRow = vegetarian?.dropdown?.value ? `
+        <tr><td style="padding: 8px 0; color: #666; width: 140px;">Vegetarian</td><td style="padding: 8px 0;">${vegetarian.dropdown.value === "yes" ? "Yes" : "No"}</td></tr>
       ` : "";
 
       const pendingActions = requiresConfirmation ? `

@@ -39,13 +39,6 @@ export async function POST(req: NextRequest) {
             dropdown: { options: [{ label: "No", value: "no" }, { label: "Yes", value: "yes" }] },
             optional: true,
           },
-          {
-            key: "dietary_notes",
-            label: { type: "custom" as const, custom: "Allergies or dietary notes" },
-            type: "text" as const,
-            text: { maximum_length: 300 },
-            optional: true,
-          },
         ],
       } : {}),
       metadata: { eventId, eventSlug, ...(eventTitle ? { eventTitle } : {}), ...(eventDate ? { eventDate } : {}), ...(cancellationHours != null ? { cancellationHours: String(cancellationHours) } : {}), ...(requiresConfirmation ? { requiresConfirmation: "true" } : {}) },
