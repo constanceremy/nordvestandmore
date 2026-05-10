@@ -7,6 +7,7 @@ import { Analytics } from "@vercel/analytics/next";
 export const metadata: Metadata = {
   title: "NV & more — Nordvest, Copenhagen",
   description: "Events, guides and stories from Nordvest, Copenhagen's most vibrant neighbourhood.",
+  icons: { icon: "/icon.png" },
   openGraph: {
     title: "NV & more",
     description: "Events, guides and stories from Nordvest, Copenhagen.",
