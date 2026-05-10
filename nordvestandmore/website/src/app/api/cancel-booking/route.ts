@@ -120,9 +120,9 @@ export async function POST(req: NextRequest) {
         await stripe.paymentIntents.cancel(booking.stripe_payment_intent);
         stripeNote = "Hold released — no charge was made.";
       } else {
-        // Per booking policy — capture the hold, then they're charged
-        await stripe.paymentIntents.capture(booking.stripe_payment_intent);
-        stripeNote = `${booking.amount_paid} ${booking.currency} charged per booking policy.`;
+        // Per booking policy — keep the hold, charge only if event is confirmed
+        // Status becomes "cancelled_hold" so the capture route picks it up later
+        stripeNote = `Hold kept — will be charged ${booking.amount_paid} ${booking.currency} if event is confirmed.`;
       }
     } else if (booking.status === "confirmed" && booking.stripe_payment_intent) {
       if (refund) {
@@ -137,7 +137,10 @@ export async function POST(req: NextRequest) {
     return html(`<h2>Stripe error</h2><p style="color:#dc2626;">${message}</p><p>Booking was not cancelled. Try again or handle manually in Stripe.</p>`);
   }
 
-  await supabase.from("bookings").update({ status: "cancelled" }).eq("id", id);
+  // pending + no refund → cancelled_hold (spot freed, hold kept for later capture)
+  // everything else → cancelled
+  const newStatus = booking.status === "pending" && !refund ? "cancelled_hold" : "cancelled";
+  await supabase.from("bookings").update({ status: newStatus }).eq("id", id);
 
   if (booking.event_id) {
     try {
@@ -160,12 +163,12 @@ export async function POST(req: NextRequest) {
         : "";
       const wasPending = booking.status === "pending";
       const wasCharged = booking.status === "confirmed";
-      // pending + no refund = we captured (charged them per policy)
-      // pending + refund = we released the hold (no charge, being nice)
-      // confirmed + refund = we issued a refund
+      // pending + no refund = hold kept, will charge if event confirmed
+      // pending + refund = hold released, no charge
+      // confirmed + refund = refund issued
       // confirmed + no refund = payment kept
       const refundLine = wasPending && !refund
-        ? ` As per our booking policy, your card has been charged ${booking.amount_paid} ${booking.currency}.`
+        ? ` As per our booking policy, your card will be charged ${booking.amount_paid} ${booking.currency} if the event is confirmed.`
         : wasPending && refund
         ? " Your payment hold has been released — no charge was made."
         : wasCharged && refund
@@ -191,7 +194,7 @@ nordvestandmore.com`,
             <h2 style="font-size:24px;margin-bottom:8px;">Booking cancelled</h2>
             <p>Hi ${booking.name},</p>
             <p>Your booking${booking.event_title ? ` for <strong>${booking.event_title}</strong>` : ""}${dateLabel ? ` on <strong>${dateLabel}</strong>` : ""} has been cancelled.</p>
-            ${wasPending && !refund ? `<p>As per our booking policy, your card has been charged <strong>${booking.amount_paid} ${booking.currency}</strong>.</p>` : wasPending && refund ? `<p>Your payment hold has been released — no charge was made.</p>` : wasCharged && refund ? `<p>A refund has been issued to your card.</p>` : ""}
+            ${wasPending && !refund ? `<p>As per our booking policy, your card will be charged <strong>${booking.amount_paid} ${booking.currency}</strong> if the event is confirmed.</p>` : wasPending && refund ? `<p>Your payment hold has been released — no charge was made.</p>` : wasCharged && refund ? `<p>A refund has been issued to your card.</p>` : ""}
             <p>If you have any questions, reply to this email or write us at <a href="mailto:nordvestandmore@gmail.com">nordvestandmore@gmail.com</a>.</p>
             <p style="margin-top:32px;">See you at a future event,<br/>Constance<br/><br/><a href="https://www.instagram.com/nordvestandmore">@nordvestandmore</a><br/><a href="https://nordvestandmore.com">nordvestandmore.com</a></p>
           </div>

@@ -32,6 +32,7 @@ type Booking = {
   currency: string;
   stripe_payment_intent: string;
   cancellation_hours?: number | null;
+  status: string;
 };
 
 async function sendConfirmedEmail(booking: Booking) {
@@ -104,6 +105,35 @@ nordvestandmore.com`,
   });
 }
 
+async function sendChargedPerPolicyEmail(booking: Booking) {
+  const dateLabel = booking.event_date
+    ? new Date(booking.event_date).toLocaleDateString("en-DK", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+    : "";
+  await transporter.sendMail({
+    from: `"NV & more" <${process.env.GMAIL_USER}>`,
+    to: booking.email,
+    subject: "Charge confirmation - NV & more",
+    text: `Hi ${booking.name},
+
+${booking.event_title ? `${booking.event_title} is` : "The event is"} confirmed${dateLabel ? ` for ${dateLabel}` : ""}. As per our booking policy, your card has been charged ${booking.amount_paid} ${booking.currency}.
+
+If you have any questions, reply to this email or write us at nordvestandmore@gmail.com.
+
+Constance
+@nordvestandmore
+nordvestandmore.com`,
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#111;">
+        <h2 style="font-size:24px;margin-bottom:8px;">Charge confirmation</h2>
+        <p>Hi ${booking.name},</p>
+        <p>${booking.event_title ? `<strong>${booking.event_title}</strong> is` : "The event is"} confirmed${dateLabel ? ` for <strong>${dateLabel}</strong>` : ""}. As per our booking policy, your card has been charged <strong>${booking.amount_paid} ${booking.currency}</strong>.</p>
+        <p>If you have any questions, reply to this email or write us at <a href="mailto:nordvestandmore@gmail.com">nordvestandmore@gmail.com</a>.</p>
+        <p style="margin-top:32px;">Constance<br/><br/><a href="https://www.instagram.com/nordvestandmore">@nordvestandmore</a></p>
+      </div>
+    `,
+  });
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const sessionId = searchParams.get("session");
@@ -117,9 +147,9 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabase();
   const { data: bookings } = await supabase
     .from("bookings")
-    .select("name, email, event_id, event_title, event_date, amount_paid, currency, stripe_payment_intent, cancellation_hours")
+    .select("name, email, event_id, event_title, event_date, amount_paid, currency, stripe_payment_intent, cancellation_hours, status")
     .eq("event_id", sessionId)
-    .eq("status", "pending");
+    .in("status", ["pending", "cancelled_hold"]);
 
   if (!bookings || bookings.length === 0) {
     return html(`<h2>No pending bookings</h2><p>There are no pending reservations for this session.</p>`);
@@ -133,7 +163,7 @@ export async function GET(req: NextRequest) {
   const currency = bookings[0].currency ?? "DKK";
 
   const rows = bookings.map((b: Booking) =>
-    `<tr><td style="padding:6px 0;border-bottom:1px solid #e5e7eb;">${b.name}</td><td style="padding:6px 0;border-bottom:1px solid #e5e7eb;color:#666;">${b.email}</td><td style="padding:6px 0;border-bottom:1px solid #e5e7eb;text-align:right;">${b.amount_paid} ${b.currency}</td></tr>`
+    `<tr><td style="padding:6px 0;border-bottom:1px solid #e5e7eb;">${b.name}${b.status === "cancelled_hold" ? ` <span style="font-size:11px;color:#f59e0b;font-weight:600;">CANCELLED (HOLD)</span>` : ""}</td><td style="padding:6px 0;border-bottom:1px solid #e5e7eb;color:#666;">${b.email}</td><td style="padding:6px 0;border-bottom:1px solid #e5e7eb;text-align:right;">${b.amount_paid} ${b.currency}</td></tr>`
   ).join("");
 
   const color = action === "capture" ? "#111" : "#dc2626";
@@ -183,9 +213,9 @@ export async function POST(req: NextRequest) {
 
   const { data: bookings } = await supabase
     .from("bookings")
-    .select("name, email, event_id, event_title, event_date, amount_paid, currency, stripe_payment_intent, cancellation_hours")
+    .select("name, email, event_id, event_title, event_date, amount_paid, currency, stripe_payment_intent, cancellation_hours, status")
     .eq("event_id", sessionId)
-    .eq("status", "pending");
+    .in("status", ["pending", "cancelled_hold"]);
 
   if (!bookings || bookings.length === 0) {
     return html(`<h2>No pending bookings</h2><p>Nothing to process.</p>`);
@@ -194,12 +224,19 @@ export async function POST(req: NextRequest) {
   const results: string[] = [];
 
   for (const booking of bookings as Booking[]) {
+    const isCancelledHold = booking.status === "cancelled_hold";
     try {
       if (action === "capture") {
         await stripe.paymentIntents.capture(booking.stripe_payment_intent);
-        await supabase.from("bookings").update({ status: "confirmed" }).eq("stripe_payment_intent", booking.stripe_payment_intent);
-        if (booking.email) await sendConfirmedEmail(booking);
-        results.push(`<li>✓ ${booking.name} — charged ${booking.amount_paid} ${booking.currency}</li>`);
+        if (isCancelledHold) {
+          await supabase.from("bookings").update({ status: "cancelled_charged" }).eq("stripe_payment_intent", booking.stripe_payment_intent);
+          if (booking.email) await sendChargedPerPolicyEmail(booking);
+          results.push(`<li>✓ ${booking.name} — charged ${booking.amount_paid} ${booking.currency} (per policy, booking was cancelled)</li>`);
+        } else {
+          await supabase.from("bookings").update({ status: "confirmed" }).eq("stripe_payment_intent", booking.stripe_payment_intent);
+          if (booking.email) await sendConfirmedEmail(booking);
+          results.push(`<li>✓ ${booking.name} — charged ${booking.amount_paid} ${booking.currency}</li>`);
+        }
       } else {
         await stripe.paymentIntents.cancel(booking.stripe_payment_intent);
         await supabase.from("bookings").update({ status: "cancelled" }).eq("stripe_payment_intent", booking.stripe_payment_intent);
