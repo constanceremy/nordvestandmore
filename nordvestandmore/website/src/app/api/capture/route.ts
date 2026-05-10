@@ -23,6 +23,7 @@ function html(body: string) {
 }
 
 type Booking = {
+  id: string;
   name: string;
   email: string;
   event_id: string;
@@ -30,7 +31,7 @@ type Booking = {
   event_date: string;
   amount_paid: number;
   currency: string;
-  stripe_payment_intent: string;
+  stripe_payment_intent: string | null;
   cancellation_hours?: number | null;
   status: string;
 };
@@ -147,7 +148,7 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabase();
   const { data: bookings } = await supabase
     .from("bookings")
-    .select("name, email, event_id, event_title, event_date, amount_paid, currency, stripe_payment_intent, cancellation_hours, status")
+    .select("id, name, email, event_id, event_title, event_date, amount_paid, currency, stripe_payment_intent, cancellation_hours, status")
     .eq("event_id", sessionId)
     .in("status", ["pending", "cancelled_hold"]);
 
@@ -213,7 +214,7 @@ export async function POST(req: NextRequest) {
 
   const { data: bookings } = await supabase
     .from("bookings")
-    .select("name, email, event_id, event_title, event_date, amount_paid, currency, stripe_payment_intent, cancellation_hours, status")
+    .select("id, name, email, event_id, event_title, event_date, amount_paid, currency, stripe_payment_intent, cancellation_hours, status")
     .eq("event_id", sessionId)
     .in("status", ["pending", "cancelled_hold"]);
 
@@ -227,19 +228,23 @@ export async function POST(req: NextRequest) {
     const isCancelledHold = booking.status === "cancelled_hold";
     try {
       if (action === "capture") {
-        await stripe.paymentIntents.capture(booking.stripe_payment_intent);
+        if (booking.stripe_payment_intent) {
+          await stripe.paymentIntents.capture(booking.stripe_payment_intent);
+        }
         if (isCancelledHold) {
-          await supabase.from("bookings").update({ status: "cancelled_charged" }).eq("stripe_payment_intent", booking.stripe_payment_intent);
+          await supabase.from("bookings").update({ status: "cancelled_charged" }).eq("id", booking.id);
           if (booking.email) await sendChargedPerPolicyEmail(booking);
           results.push(`<li>✓ ${booking.name} — charged ${booking.amount_paid} ${booking.currency} (per policy, booking was cancelled)</li>`);
         } else {
-          await supabase.from("bookings").update({ status: "confirmed" }).eq("stripe_payment_intent", booking.stripe_payment_intent);
+          await supabase.from("bookings").update({ status: "confirmed" }).eq("id", booking.id);
           if (booking.email) await sendConfirmedEmail(booking);
           results.push(`<li>✓ ${booking.name} — charged ${booking.amount_paid} ${booking.currency}</li>`);
         }
       } else {
-        await stripe.paymentIntents.cancel(booking.stripe_payment_intent);
-        await supabase.from("bookings").update({ status: "cancelled" }).eq("stripe_payment_intent", booking.stripe_payment_intent);
+        if (booking.stripe_payment_intent) {
+          await stripe.paymentIntents.cancel(booking.stripe_payment_intent);
+        }
+        await supabase.from("bookings").update({ status: "cancelled" }).eq("id", booking.id);
         if (booking.email) await sendCancelledEmail(booking);
         results.push(`<li>✓ ${booking.name} — released</li>`);
       }
