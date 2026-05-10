@@ -54,11 +54,15 @@ export async function GET(req: NextRequest) {
   const isPending = booking.status === "pending";
 
   const refundNote = isPending
-    ? `This is a pending reservation — the hold will be released either way. No charge was ever made.`
+    ? `This is a pending reservation — the hold is on their card but not yet captured.`
     : `The booking was paid (${booking.amount_paid} ${booking.currency}). Choose whether to issue a refund.`;
 
-  const withRefundLabel = isPending ? "Release hold (no charge)" : `Cancel + refund ${booking.amount_paid} ${booking.currency}`;
-  const noRefundLabel = isPending ? "Cancel (no charge, keep spot blocked)" : "Cancel (keep payment)";
+  const withRefundLabel = isPending
+    ? `Cancel + charge them (${booking.amount_paid} ${booking.currency}) — per booking policy`
+    : `Cancel + refund ${booking.amount_paid} ${booking.currency}`;
+  const noRefundLabel = isPending
+    ? "Cancel + release hold (be nice, no charge)"
+    : "Cancel (keep payment)";
 
   return html(`
     <h2>Cancel booking?</h2>
@@ -111,9 +115,15 @@ export async function POST(req: NextRequest) {
 
   try {
     if (booking.status === "pending" && booking.stripe_payment_intent) {
-      // Always release the hold for pending — no charge was ever made
-      await stripe.paymentIntents.cancel(booking.stripe_payment_intent);
-      stripeNote = "Payment hold released — no charge was made.";
+      if (refund) {
+        // "Be nice" — release the hold, no charge
+        await stripe.paymentIntents.cancel(booking.stripe_payment_intent);
+        stripeNote = "Hold released — no charge was made.";
+      } else {
+        // Per booking policy — capture the hold, then they're charged
+        await stripe.paymentIntents.capture(booking.stripe_payment_intent);
+        stripeNote = `${booking.amount_paid} ${booking.currency} charged per booking policy.`;
+      }
     } else if (booking.status === "confirmed" && booking.stripe_payment_intent) {
       if (refund) {
         await stripe.refunds.create({ payment_intent: booking.stripe_payment_intent });
@@ -148,12 +158,19 @@ export async function POST(req: NextRequest) {
       const dateLabel = booking.event_date
         ? new Date(booking.event_date).toLocaleDateString("en-DK", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
         : "";
+      const wasPending = booking.status === "pending";
       const wasCharged = booking.status === "confirmed";
-      const refundLine = wasCharged && refund
+      // pending + no refund = we captured (charged them per policy)
+      // pending + refund = we released the hold (no charge, being nice)
+      // confirmed + refund = we issued a refund
+      // confirmed + no refund = payment kept
+      const refundLine = wasPending && !refund
+        ? ` As per our booking policy, your card has been charged ${booking.amount_paid} ${booking.currency}.`
+        : wasPending && refund
+        ? " Your payment hold has been released — no charge was made."
+        : wasCharged && refund
         ? " A refund has been issued to your card."
-        : wasCharged
-        ? ""
-        : " No charge was made to your card.";
+        : "";
 
       await transporter.sendMail({
         from: `"NV & more" <${process.env.GMAIL_USER}>`,
@@ -174,7 +191,7 @@ nordvestandmore.com`,
             <h2 style="font-size:24px;margin-bottom:8px;">Booking cancelled</h2>
             <p>Hi ${booking.name},</p>
             <p>Your booking${booking.event_title ? ` for <strong>${booking.event_title}</strong>` : ""}${dateLabel ? ` on <strong>${dateLabel}</strong>` : ""} has been cancelled.</p>
-            ${wasCharged && refund ? `<p>A refund has been issued to your card.</p>` : !wasCharged ? `<p>No charge was made to your card.</p>` : ""}
+            ${wasPending && !refund ? `<p>As per our booking policy, your card has been charged <strong>${booking.amount_paid} ${booking.currency}</strong>.</p>` : wasPending && refund ? `<p>Your payment hold has been released — no charge was made.</p>` : wasCharged && refund ? `<p>A refund has been issued to your card.</p>` : ""}
             <p>If you have any questions, reply to this email or write us at <a href="mailto:nordvestandmore@gmail.com">nordvestandmore@gmail.com</a>.</p>
             <p style="margin-top:32px;">See you at a future event,<br/>Constance<br/><br/><a href="https://www.instagram.com/nordvestandmore">@nordvestandmore</a><br/><a href="https://nordvestandmore.com">nordvestandmore.com</a></p>
           </div>
