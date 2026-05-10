@@ -495,6 +495,16 @@ def run_scrape(batch_size: int, force: bool = False):
         return
 
     all_accounts, _ = load_accounts()
+
+    # Build IG handle → Notion location page ID map (same Notion fetch, cached)
+    from dedup import _load_csv_rows
+    ig_to_loc: dict[str, str] = {}
+    for row in _load_csv_rows():
+        ig = (row.get("instagram") or "").strip().lstrip("@").lower()
+        loc_id = row.get("notion_page_id") or ""
+        if ig and loc_id:
+            ig_to_loc[ig] = loc_id
+
     start_pos = state["cursor"] % len(all_accounts) if all_accounts else 0
     print(f"📸 Drip batch: accounts {start_pos + 1}–{start_pos + len(batch)} of {len(all_accounts)}")
     print(f"   Accounts: {', '.join(f'@{a}' for a in batch)}")
@@ -598,11 +608,13 @@ def run_scrape(batch_size: int, force: bool = False):
                 return ig_mod.scrape_account(
                     acct, L, client, existing, all_entries,
                     source_mapping, tmp_dir, auto_login_retry=False,
+                    location_id=ig_to_loc.get(acct.lower()),
                 )
             finally:
                 signal.alarm(0)
                 signal.signal(signal.SIGALRM, old)
 
+        consecutive_rate_limits = 0
         for i, account in enumerate(batch, 1):
             print(f"\n[{i}/{len(batch)}] Scraping @{account}...")
             t0 = time.time()
@@ -653,6 +665,32 @@ def run_scrape(batch_size: int, force: bool = False):
             if latest_date:
                 state.setdefault("last_post_dates", {})[account] = latest_date
             state.setdefault("last_scraped", {})[account] = datetime.now(timezone.utc).isoformat()
+
+            if stats.get("rate_limited"):
+                consecutive_rate_limits += 1
+                print(f"  🚦 @{account}: rate-limited (Instagram returned fake 404 while authenticated)")
+                results[account] = {"ok": True, "posts": 0, "events": 0, "created": 0, "note": "rate-limited"}
+                state["successes"] += 1
+                acct_status = f"🚦 @{account}: rate-limited"
+                if consecutive_rate_limits >= 2:
+                    print(f"\n  🛑 {consecutive_rate_limits} consecutive rate limits — aborting batch early.")
+                    print(f"     Instagram is throttling this session. Next run will continue from @{account}.")
+                    _ntfy(
+                        "IG Scraper: rate-limited",
+                        f"{consecutive_rate_limits} consecutive fake-404s while authenticated. Batch aborted early — will retry next run.",
+                        priority="default",
+                        tags="warning",
+                    )
+                    # Don't advance cursor past this account so it retries next run
+                    new_cursor = (all_accounts.index(account)) % len(all_accounts)
+                    break
+                if i < len(batch):
+                    print(f"  ⏳ Waiting 20s before next account...")
+                    time_in_delays += 20
+                    time.sleep(20)
+                continue
+            else:
+                consecutive_rate_limits = 0
 
             if stats.get("error"):
                 reason = f"error after {duration:.1f}s"

@@ -88,13 +88,13 @@ def _load(notion_token: str) -> tuple[dict[str, dict], dict[str, str], dict[str,
         if not name:
             continue
         page_id = page["id"]
-        lat_raw = props.get("Lat", {}).get("number")
-        lng_raw = props.get("Lng", {}).get("number")
+        lat_raw = "".join(t.get("plain_text", "") for t in props.get("Lat", {}).get("rich_text", [])).strip()
+        lng_raw = "".join(t.get("plain_text", "") for t in props.get("Lng", {}).get("rich_text", [])).strip()
         name_lookup[_normalize(name)] = {
             "id": page_id,
             "name": name,
-            "lat": float(lat_raw) if lat_raw is not None else None,
-            "lng": float(lng_raw) if lng_raw is not None else None,
+            "lat": float(lat_raw) if lat_raw else None,
+            "lng": float(lng_raw) if lng_raw else None,
         }
 
         ig_raw = "".join(t.get("plain_text", "") for t in props.get("Instagram", {}).get("rich_text", [])).strip().lstrip("@")

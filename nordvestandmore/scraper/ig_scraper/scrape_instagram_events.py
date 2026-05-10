@@ -55,10 +55,6 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 IG_USERNAME = os.environ.get("IG_USERNAME")
 IG_PASSWORD = os.environ.get("IG_PASSWORD")
 DAYS_BACK = int(os.environ.get("DAYS_BACK", "7"))
-ACCOUNTS_FILE = os.environ.get(
-    "ACCOUNTS_FILE",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "accounts.txt"),
-)
 
 NOTION_API = "https://api.notion.com/v1"
 NOTION_HEADERS = {
@@ -182,17 +178,18 @@ def try_login(L: instaloader.Instaloader):
 
 
 def load_accounts() -> list[str]:
-    """Load Instagram account handles from accounts.txt (one per line, # for comments)."""
-    accounts = []
-    path = Path(ACCOUNTS_FILE)
-    if not path.exists():
-        log(f"Accounts file not found: {ACCOUNTS_FILE}")
-        return accounts
-    for line in path.read_text().splitlines():
-        line = line.split("#")[0].strip()  # Strip inline comments
-        if line and not line.startswith("#"):
-            accounts.append(line.lstrip("@"))
-    return accounts
+    """Load Instagram account handles from Notion Locations DB."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from dedup import _load_csv_rows
+        return [
+            row["instagram"].strip().lstrip("@")
+            for row in _load_csv_rows()
+            if row.get("instagram", "").strip()
+        ]
+    except Exception as e:
+        log(f"Failed to load accounts from Notion: {e}")
+        return []
 
 
 def get_recent_posts(L: instaloader.Instaloader, username: str, days_back: int,
@@ -615,7 +612,7 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             desc = ev.get("description") or ""
             if desc:
                 props["Description"] = {"rich_text": [{"text": {"content": desc[:2000]}}]}
-        loc_id = find_location_id_by_ig_handle(ev.get("ig_handle", ""), NOTION_TOKEN)
+        loc_id = ev.get("location_id") or find_location_id_by_ig_handle(ev.get("ig_handle", ""), NOTION_TOKEN)
         if not loc_id and ev.get("location"):
             loc_id = find_location_id(ev["location"], NOTION_TOKEN, _gemini_client)
         if loc_id:
@@ -658,8 +655,8 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
         props["Location"] = {
             "rich_text": [{"text": {"content": ev["location"][:2000]}}]
         }
-    # Locations relation: try IG handle first (most reliable), then location text
-    loc_id = find_location_id_by_ig_handle(ev.get("ig_handle", ""), NOTION_TOKEN)
+    # Locations relation: use pre-resolved ID if available, else try IG handle/fuzzy match
+    loc_id = ev.get("location_id") or find_location_id_by_ig_handle(ev.get("ig_handle", ""), NOTION_TOKEN)
     if not loc_id and ev.get("location"):
         loc_id = find_location_id(ev["location"], NOTION_TOKEN, _gemini_client)
     if loc_id:
@@ -769,7 +766,7 @@ def notion_update(page_id: str, ev: dict, merge_only: bool = False):
 
 # -------------------- PER-ACCOUNT FUNCTION (used by runner) --------------------
 def scrape_account(account, L, client, existing, all_entries, source_mapping, tmp_dir,
-                   auto_login_retry=True):
+                   auto_login_retry=True, location_id=None):
     """
     Scrape a single Instagram account.
     Mutates `existing` and `all_entries` in-place as new entries are created.
@@ -958,6 +955,7 @@ def scrape_account(account, L, client, existing, all_entries, source_mapping, tm
                 "start_time_disp": to_12h(event_data.get("start_time")),
                 "end_time_disp": to_12h(event_data.get("end_time")),
                 "location": location,
+                "location_id": location_id,
                 "description": event_data.get("description"),
                 "source_type": "Instagram",
                 "source": f"@{account}",

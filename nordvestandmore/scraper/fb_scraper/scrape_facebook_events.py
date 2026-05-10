@@ -118,45 +118,63 @@ def make_gemini_dedup_fn(client):
 
 
 # -------------------- Facebook scraping --------------------
+def _normalise_fb_url(url: str) -> str:
+    """Ensure a Facebook URL points to the /events page."""
+    if "sk=events" in url or "/events" in url:
+        return url
+    if "profile.php" in url:
+        sep = "&" if "?" in url else "?"
+        return url + sep + "sk=events"
+    return url.rstrip("/") + "/events"
+
+
 def load_fb_pages() -> list[dict]:
     """
-    Load Facebook page event URLs from fb_accounts.txt.
-    Supports optional filters:  URL |filter:text  #comment
-    Example: https://facebook.com/fofkbh/events |filter:Birkedommervej
+    Load Facebook page event URLs from Notion Locations DB, falling back to fb_accounts.txt.
+    Each entry: {"url": str, "filter": str|None, "exclude": str|None}
     """
+    # Try Notion first via dedup._load_csv_rows (already fetches Locations DB)
+    try:
+        import sys, os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from dedup import _load_csv_rows
+        rows = _load_csv_rows()
+        pages = []
+        for row in rows:
+            fb_url = (row.get("facebook") or "").strip()
+            if not fb_url:
+                continue
+            pages.append({
+                "url":            _normalise_fb_url(fb_url),
+                "filter":         row.get("fb_filter") or None,
+                "exclude":        row.get("fb_exclude") or None,
+                "notion_page_id": row.get("notion_page_id") or None,
+            })
+        if pages:
+            log(f"📋 Loaded {len(pages)} Facebook pages from Notion Locations DB")
+            return pages
+    except Exception as e:
+        log(f"📋 Notion fetch failed ({e}), falling back to fb_accounts.txt")
+
+    # Fallback: fb_accounts.txt
     pages = []
     path = Path(FB_ACCOUNTS_FILE)
     if not path.exists():
         log(f"Accounts file not found: {FB_ACCOUNTS_FILE}")
         return pages
     for line in path.read_text().splitlines():
-        line = line.split("#")[0].strip()  # Strip inline comments
+        line = line.split("#")[0].strip()
         if not line:
             continue
-
-        # Extract |filter: and |exclude: if present (order-independent)
         location_filter = None
         exclude_filter = None
-        # Process |exclude: first so it doesn't interfere with |filter:
         if "|exclude:" in line:
             parts = line.split("|exclude:", 1)
-            line = parts[0].strip()
-            exclude_filter = parts[1].strip()
+            line, exclude_filter = parts[0].strip(), parts[1].strip()
         if "|filter:" in line:
             parts = line.split("|filter:", 1)
-            line = parts[0].strip()
-            location_filter = parts[1].strip()
-
-        # Handle profile.php?id=...&sk=events format
-        if "sk=events" in line or "/events" in line:
-            pass  # Already points to events
-        elif "profile.php" in line:
-            sep = "&" if "?" in line else "?"
-            line = line + sep + "sk=events"
-        else:
-            line = line.rstrip("/") + "/events"
-
-        pages.append({"url": line, "filter": location_filter, "exclude": exclude_filter})
+            line, location_filter = parts[0].strip(), parts[1].strip()
+        pages.append({"url": _normalise_fb_url(line), "filter": location_filter, "exclude": exclude_filter})
     return pages
 
 
@@ -935,12 +953,13 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
             desc = ev.get("description") or ""
             if desc:
                 props["Description"] = {"rich_text": [{"text": {"content": desc[:2000]}}]}
-        if ev.get("location") or ev.get("source"):
+        loc_id = ev.get("location_id")
+        if not loc_id and (ev.get("location") or ev.get("source")):
             loc_id = find_location_id_by_fb(ev.get("source", ""), NOTION_TOKEN)
             if not loc_id:
                 loc_id = find_location_id(ev.get("location", ""), NOTION_TOKEN, _gemini_client)
-            if loc_id:
-                props["Locations"] = {"relation": [{"id": loc_id}]}
+        if loc_id:
+            props["Locations"] = {"relation": [{"id": loc_id}]}
         return props
 
     props = {}
@@ -974,8 +993,8 @@ def build_notion_props(ev: dict, is_update: bool = False, merge_only: bool = Fal
         props["Location"] = {
             "rich_text": [{"text": {"content": ev["location"][:2000]}}]
         }
-    # Locations relation: try FB page URL first, then location text
-    loc_id = find_location_id_by_fb(ev.get("source", ""), NOTION_TOKEN)
+    # Locations relation: use pre-resolved ID if available, else try FB page/fuzzy match
+    loc_id = ev.get("location_id") or find_location_id_by_fb(ev.get("source", ""), NOTION_TOKEN)
     if not loc_id and ev.get("location"):
         loc_id = find_location_id(ev["location"], NOTION_TOKEN)
     if loc_id:
@@ -1088,6 +1107,7 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
     page_url = page_entry["url"]
     location_filter = page_entry.get("filter")
     exclude_filter = page_entry.get("exclude")
+    location_id = page_entry.get("notion_page_id")
     page_name = extract_page_name(page_url)
 
     raw_events = scrape_facebook_events(page_url)
@@ -1326,6 +1346,7 @@ def scrape_page_entry(page_entry, client, existing, all_entries, source_mapping,
                 "start_time_disp": to_12h(event_data.get("start_time")),
                 "end_time_disp": to_12h(event_data.get("end_time")),
                 "location": location,
+                "location_id": location_id,
                 "description": event_data.get("description"),
                 "source_type": "Facebook",
                 "source": page_name,

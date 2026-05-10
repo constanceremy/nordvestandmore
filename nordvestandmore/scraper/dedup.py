@@ -26,16 +26,12 @@ follow these rules:
    Goal: best link + richest combined metadata in one entry.
 ──────────────────────────────────────────────────────────────────────
 """
-import csv
 import io
 import json
 import math
 import os
 import re
 import urllib.request
-from pathlib import Path
-
-MAPPING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "source_mapping.csv")
 
 NOTION_TOKEN    = os.environ.get("NOTION_TOKEN", "")
 LOCATIONS_DB_ID = "33c375efa2cc8036b52bc40db2aa42fb"
@@ -81,13 +77,14 @@ def _load_csv_rows() -> list[dict]:
                     if not name:
                         continue
                     rows.append({
-                        "name":       name,
-                        "instagram":  "".join(t["plain_text"] for t in p.get("Instagram", {}).get("rich_text", [])),
-                        "facebook":   (p.get("Facebook", {}).get("url") or ""),
-                        "fb_filter":  "".join(t["plain_text"] for t in p.get("fb_filter", {}).get("rich_text", [])),
-                        "fb_exclude": "".join(t["plain_text"] for t in p.get("fb_exclude", {}).get("rich_text", [])),
-                        "website":    (p.get("Website", {}).get("url") or ""),
-                        "priority":   str(p.get("Priority", {}).get("number") or ""),
+                        "name":           name,
+                        "instagram":      "".join(t["plain_text"] for t in p.get("Instagram", {}).get("rich_text", [])),
+                        "facebook":       (p.get("Facebook", {}).get("url") or ""),
+                        "fb_filter":      "".join(t["plain_text"] for t in p.get("fb_filter", {}).get("rich_text", [])),
+                        "fb_exclude":     "".join(t["plain_text"] for t in p.get("fb_exclude", {}).get("rich_text", [])),
+                        "website":        (p.get("Website", {}).get("url") or ""),
+                        "priority":       str(p.get("Priority", {}).get("number") or ""),
+                        "notion_page_id": page["id"],
                     })
                 if not data.get("has_more"):
                     break
@@ -97,15 +94,7 @@ def _load_csv_rows() -> list[dict]:
                 _cached_rows = rows
                 return rows
         except Exception as e:
-            print(f"📋 Notion fetch failed ({e}), falling back to local CSV")
-
-    # Fallback to local CSV
-    path = Path(MAPPING_FILE)
-    if path.exists():
-        with open(path, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-        print(f"📋 Loaded {len(rows)} sources from local CSV")
+            print(f"📋 Notion fetch failed ({e}), returning empty list")
 
     _cached_rows = rows
     return rows
