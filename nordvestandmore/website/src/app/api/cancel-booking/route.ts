@@ -51,9 +51,14 @@ export async function GET(req: NextRequest) {
     ? new Date(booking.event_date).toLocaleDateString("en-DK", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
     : "";
 
-  const statusNote = booking.status === "pending"
-    ? `The payment hold will be released — no charge will be made to their card.`
-    : `The booking is already confirmed and paid. A refund will be issued automatically.`;
+  const isPending = booking.status === "pending";
+
+  const refundNote = isPending
+    ? `This is a pending reservation — the hold will be released either way. No charge was ever made.`
+    : `The booking was paid (${booking.amount_paid} ${booking.currency}). Choose whether to issue a refund.`;
+
+  const withRefundLabel = isPending ? "Release hold (no charge)" : `Cancel + refund ${booking.amount_paid} ${booking.currency}`;
+  const noRefundLabel = isPending ? "Cancel (no charge, keep spot blocked)" : "Cancel (keep payment)";
 
   return html(`
     <h2>Cancel booking?</h2>
@@ -65,12 +70,13 @@ export async function GET(req: NextRequest) {
       <tr><td style="padding:6px 0;color:#666;">Amount</td><td style="padding:6px 0;">${booking.amount_paid} ${booking.currency}</td></tr>
       <tr><td style="padding:6px 0;color:#666;">Status</td><td style="padding:6px 0;">${booking.status}</td></tr>
     </table>
-    <p style="color:#666;font-size:14px;">${statusNote}</p>
-    <p style="color:#666;font-size:14px;">A cancellation email will be sent to ${booking.email}.</p>
-    <form method="POST">
+    <p style="color:#666;font-size:14px;margin-bottom:20px;">${refundNote}</p>
+    <p style="color:#666;font-size:13px;margin-bottom:20px;">A cancellation email will be sent to ${booking.email} either way. The spot will be freed up in both cases.</p>
+    <form method="POST" style="display:flex;flex-direction:column;gap:12px;">
       <input type="hidden" name="id" value="${id}" />
       <input type="hidden" name="secret" value="${secret}" />
-      <button type="submit" style="padding:12px 24px;background:#dc2626;color:#fff;border:none;font-size:15px;font-weight:600;letter-spacing:0.05em;cursor:pointer;">Cancel this booking</button>
+      <button type="submit" name="refund" value="yes" style="padding:12px 24px;background:#dc2626;color:#fff;border:none;font-size:14px;font-weight:600;letter-spacing:0.05em;cursor:pointer;text-align:left;">${withRefundLabel}</button>
+      <button type="submit" name="refund" value="no" style="padding:12px 24px;background:#fff;color:#111;border:1px solid #111;font-size:14px;font-weight:600;letter-spacing:0.05em;cursor:pointer;text-align:left;">${noRefundLabel}</button>
     </form>
   `);
 }
@@ -79,6 +85,7 @@ export async function POST(req: NextRequest) {
   const formData = await req.formData();
   const id = formData.get("id") as string;
   const secret = formData.get("secret") as string;
+  const refund = formData.get("refund") === "yes";
 
   if (!id || secret !== process.env.CAPTURE_SECRET) {
     return unauthorized();
@@ -100,16 +107,20 @@ export async function POST(req: NextRequest) {
   }
 
   const stripe = getStripe();
-  const wasCharged = booking.status === "confirmed";
   let stripeNote = "";
 
   try {
     if (booking.status === "pending" && booking.stripe_payment_intent) {
+      // Always release the hold for pending — no charge was ever made
       await stripe.paymentIntents.cancel(booking.stripe_payment_intent);
       stripeNote = "Payment hold released — no charge was made.";
     } else if (booking.status === "confirmed" && booking.stripe_payment_intent) {
-      await stripe.refunds.create({ payment_intent: booking.stripe_payment_intent });
-      stripeNote = "Refund issued to their card.";
+      if (refund) {
+        await stripe.refunds.create({ payment_intent: booking.stripe_payment_intent });
+        stripeNote = "Refund issued to their card.";
+      } else {
+        stripeNote = "No refund issued — payment kept.";
+      }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
@@ -137,13 +148,20 @@ export async function POST(req: NextRequest) {
       const dateLabel = booking.event_date
         ? new Date(booking.event_date).toLocaleDateString("en-DK", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
         : "";
+      const wasCharged = booking.status === "confirmed";
+      const refundLine = wasCharged && refund
+        ? " A refund has been issued to your card."
+        : wasCharged
+        ? ""
+        : " No charge was made to your card.";
+
       await transporter.sendMail({
         from: `"NV & more" <${process.env.GMAIL_USER}>`,
         to: booking.email,
         subject: "Your booking has been cancelled - NV & more",
         text: `Hi ${booking.name},
 
-Your booking${booking.event_title ? ` for ${booking.event_title}` : ""}${dateLabel ? ` on ${dateLabel}` : ""} has been cancelled.${wasCharged ? " A refund has been issued to your card." : " No charge was made to your card."}
+Your booking${booking.event_title ? ` for ${booking.event_title}` : ""}${dateLabel ? ` on ${dateLabel}` : ""} has been cancelled.${refundLine}
 
 If you have any questions, reply to this email or write us at nordvestandmore@gmail.com.
 
@@ -156,7 +174,7 @@ nordvestandmore.com`,
             <h2 style="font-size:24px;margin-bottom:8px;">Booking cancelled</h2>
             <p>Hi ${booking.name},</p>
             <p>Your booking${booking.event_title ? ` for <strong>${booking.event_title}</strong>` : ""}${dateLabel ? ` on <strong>${dateLabel}</strong>` : ""} has been cancelled.</p>
-            ${wasCharged ? `<p>A refund has been issued to your card.</p>` : `<p>No charge was made to your card.</p>`}
+            ${wasCharged && refund ? `<p>A refund has been issued to your card.</p>` : !wasCharged ? `<p>No charge was made to your card.</p>` : ""}
             <p>If you have any questions, reply to this email or write us at <a href="mailto:nordvestandmore@gmail.com">nordvestandmore@gmail.com</a>.</p>
             <p style="margin-top:32px;">See you at a future event,<br/>Constance<br/><br/><a href="https://www.instagram.com/nordvestandmore">@nordvestandmore</a><br/><a href="https://nordvestandmore.com">nordvestandmore.com</a></p>
           </div>
