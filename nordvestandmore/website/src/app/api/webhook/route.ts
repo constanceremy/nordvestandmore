@@ -199,6 +199,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
+    // Extract custom fields
+    const customFields = session.custom_fields ?? [];
+    const vegetarianField = customFields.find((f: { key: string }) => f.key === "vegetarian") as { dropdown?: { value?: string } } | undefined;
+    const vegetarian = vegetarianField?.dropdown?.value ?? null;
+
     // Save booking to Supabase
     const { data: inserted, error } = await supabase.from("bookings").insert({
       event_id: eventId,
@@ -214,6 +219,7 @@ export async function POST(req: NextRequest) {
       currency,
       status: requiresConfirmation ? "pending" : "confirmed",
       cancellation_hours: cancellationHours ?? null,
+      vegetarian,
     }).select("id").single();
 
     if (error) {
@@ -260,10 +266,8 @@ export async function POST(req: NextRequest) {
       const captureUrl = `${baseUrl}/api/capture?session=${eventId}&action=capture&secret=${captureSecret}`;
       const cancelUrl = `${baseUrl}/api/capture?session=${eventId}&action=cancel&secret=${captureSecret}`;
 
-      const customFields = session.custom_fields ?? [];
-      const vegetarian = customFields.find((f: { key: string }) => f.key === "vegetarian") as { dropdown?: { value?: string } } | undefined;
-      const dietaryRow = vegetarian?.dropdown?.value ? `
-        <tr><td style="padding: 8px 0; color: #666; width: 140px;">Vegetarian</td><td style="padding: 8px 0;">${vegetarian.dropdown.value === "yes" ? "Yes" : "No"}</td></tr>
+      const dietaryRow = vegetarian ? `
+        <tr><td style="padding: 8px 0; color: #666; width: 140px;">Vegetarian</td><td style="padding: 8px 0;">${vegetarian === "yes" ? "Yes" : "No"}</td></tr>
       ` : "";
 
       const pendingActions = requiresConfirmation ? `
