@@ -31,6 +31,7 @@ type Booking = {
   amount_paid: number;
   currency: string;
   stripe_payment_intent: string;
+  cancellation_hours?: number | null;
 };
 
 async function sendConfirmedEmail(booking: Booking) {
@@ -48,7 +49,7 @@ async function sendConfirmedEmail(booking: Booking) {
 
 Great news - the event is confirmed and we look forward to seeing you${dateLabel ? ` on ${dateLabel}` : ""}.
 ${booking.amount_paid > 0 ? `\nAmount charged: ${booking.amount_paid} ${booking.currency}\n` : ""}
-Need to cancel? Reply to this email or write us at nordvestandmore@gmail.com.
+Need to cancel?${booking.cancellation_hours && booking.cancellation_hours > 0 ? ` Please contact us at least ${booking.cancellation_hours} hours before the event.` : ""} Reply to this email or write us at nordvestandmore@gmail.com.
 Booking policy: ${policyUrl}
 
 See you soon,
@@ -63,6 +64,10 @@ nordvestandmore.com`,
         ${booking.amount_paid > 0 ? `<p>Amount charged: <strong>${booking.amount_paid} ${booking.currency}</strong></p>` : ""}
         <div style="margin-top:24px;padding:16px;border:1px solid #e5e7eb;background:#f9fafb;">
           <p style="margin:0 0 8px 0;font-weight:600;font-size:14px;">Need to cancel?</p>
+          ${booking.cancellation_hours && booking.cancellation_hours > 0
+            ? `<p style="margin:0 0 8px 0;font-size:14px;color:#374151;">Please contact us at least <strong>${booking.cancellation_hours} hours</strong> before the event.</p>`
+            : `<p style="margin:0 0 8px 0;font-size:14px;color:#374151;">Please contact us as soon as possible if you need to cancel.</p>`
+          }
           <p style="margin:0 0 8px 0;font-size:14px;color:#374151;">Reply to this email or write us at <a href="mailto:nordvestandmore@gmail.com">nordvestandmore@gmail.com</a>.</p>
           <p style="margin:0;font-size:13px;"><a href="${policyUrl}" style="color:#111;">View booking policy</a></p>
         </div>
@@ -112,7 +117,7 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabase();
   const { data: bookings } = await supabase
     .from("bookings")
-    .select("name, email, event_id, event_title, event_date, amount_paid, currency, stripe_payment_intent")
+    .select("name, email, event_id, event_title, event_date, amount_paid, currency, stripe_payment_intent, cancellation_hours")
     .eq("event_id", sessionId)
     .eq("status", "pending");
 
@@ -178,7 +183,7 @@ export async function POST(req: NextRequest) {
 
   const { data: bookings } = await supabase
     .from("bookings")
-    .select("name, email, event_id, event_title, event_date, amount_paid, currency, stripe_payment_intent")
+    .select("name, email, event_id, event_title, event_date, amount_paid, currency, stripe_payment_intent, cancellation_hours")
     .eq("event_id", sessionId)
     .eq("status", "pending");
 

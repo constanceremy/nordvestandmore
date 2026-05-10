@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Save booking to Supabase
-    const { error } = await supabase.from("bookings").insert({
+    const { data: inserted, error } = await supabase.from("bookings").insert({
       event_id: eventId,
       event_slug: eventSlug,
       event_title: eventTitle ?? null,
@@ -213,7 +213,8 @@ export async function POST(req: NextRequest) {
       amount_paid: amount,
       currency,
       status: requiresConfirmation ? "pending" : "confirmed",
-    });
+      cancellation_hours: cancellationHours ?? null,
+    }).select("id").single();
 
     if (error) {
       if (error.code === "23505") {
@@ -274,6 +275,14 @@ export async function POST(req: NextRequest) {
         </div>
       ` : "";
 
+      const cancelBookingUrl = inserted?.id ? `${baseUrl}/api/cancel-booking?id=${inserted.id}&secret=${captureSecret}` : null;
+      const cancelBookingSection = cancelBookingUrl ? `
+        <div style="margin-top: 16px; padding: 12px 16px; border: 1px solid #fca5a5; background: #fff5f5;">
+          <p style="margin: 0 0 8px 0; font-size: 13px; color: #666;">Cancel this individual booking only:</p>
+          <a href="${cancelBookingUrl}" style="display: inline-block; padding: 8px 16px; background: #fff; color: #dc2626; border: 1px solid #dc2626; text-decoration: none; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;">Cancel ${name}'s booking</a>
+        </div>
+      ` : "";
+
       await transporter.sendMail({
         from: `"NV & more" <${process.env.GMAIL_USER}>`,
         to: process.env.GMAIL_USER,
@@ -293,6 +302,7 @@ export async function POST(req: NextRequest) {
               ${dietaryRow}
             </table>
             ${pendingActions}
+            ${cancelBookingSection}
             <p style="margin-top: 24px; color: #666; font-size: 13px;">Reply to this email to contact ${name}.</p>
           </div>
         `,
