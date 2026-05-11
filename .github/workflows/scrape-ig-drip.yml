@@ -2,10 +2,9 @@ name: Instagram Drip Scraper
 
 on:
   schedule:
-    # Every 30 minutes — with 5 accounts per run, covers all ~144
-    # accounts in ~14 hours.  A cursor tracks position
-    # so each run picks up where the last one left off.
-    - cron: "*/30 * * * *"
+    # Every 6 hours (00/06/12/18 UTC). Reduced from */30 to back off after IG
+    # started throttling the session in May 2026. Daily-report job runs at 06 UTC.
+    - cron: "0 */6 * * *"
   workflow_dispatch:
     inputs:
       batch_size:
@@ -103,7 +102,7 @@ jobs:
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             BATCH_SIZE="${{ inputs.batch_size || '3' }}"
             if [ "${{ inputs.force_refresh_session }}" = "true" ]; then
-              python3 -c "import json,pathlib; f=pathlib.Path('$IG_STATE_FILE'); d=json.loads(f.read_text()) if f.exists() else {}; d.update({'suspended':False,'auth_failure_streak':0}); f.parent.mkdir(parents=True,exist_ok=True); f.write_text(json.dumps(d,indent=2)); print('🔓 Scraper unsuspended')"
+              python3 -c "import json,pathlib; f=pathlib.Path('$IG_STATE_FILE'); d=json.loads(f.read_text()) if f.exists() else {}; d.update({'suspended':False,'auth_failure_streak':0,'suspended_until':None}); f.parent.mkdir(parents=True,exist_ok=True); f.write_text(json.dumps(d,indent=2)); print('🔓 Scraper unsuspended')"
             fi
             python3 drip_scrape.py --batch-size "$BATCH_SIZE" --force
           else
@@ -138,7 +137,7 @@ jobs:
   daily-report:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: github.event.schedule == '0 * * * *'
+    if: github.event.schedule == '0 */6 * * *'
     needs: drip
 
     env:

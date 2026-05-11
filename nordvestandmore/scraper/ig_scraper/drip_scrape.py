@@ -24,8 +24,13 @@ import random
 import signal
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+# Cooldown after 2 consecutive rate-limits in a single batch (fake-404s while
+# authenticated). Instagram is throttling; running again soon just burns more
+# trust. Cleared by --unsuspend or workflow force_refresh_session.
+RATE_LIMIT_COOLDOWN_HOURS = 6
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(SCRIPT_DIR)
@@ -80,6 +85,7 @@ def _default_state() -> dict:
         "last_scraped": {},      # {"handle": ISO timestamp} — when we last attempted scrape
         "auth_failure_streak": 0,  # consecutive all-failed runs (likely expired session)
         "suspended": False,        # if True, skip runs until session is refreshed
+        "suspended_until": None,   # ISO timestamp — soft cooldown after rate-limit storm
     }
 
 
@@ -488,6 +494,23 @@ def run_scrape(batch_size: int, force: bool = False):
         print("   The scraper will resume automatically once a run succeeds.")
         return  # exit cleanly — no failure, no notification spam
 
+    # ── Rate-limit cooldown (soft suspension after a rate-limit storm) ──
+    suspended_until = state.get("suspended_until")
+    if suspended_until:
+        try:
+            until = datetime.fromisoformat(suspended_until)
+            now = datetime.now(timezone.utc)
+            if now < until:
+                remaining = (until - now).total_seconds() / 3600
+                print(f"⏸️  Rate-limit cooldown active — {remaining:.1f}h remaining (until {until.isoformat()}).")
+                print("   IG was throttling this session; waiting it out instead of poking again.")
+                return
+            else:
+                print(f"🔓 Rate-limit cooldown expired (was set until {until.isoformat()}) — proceeding.")
+                state["suspended_until"] = None
+        except (ValueError, TypeError):
+            state["suspended_until"] = None  # corrupted value — clear and continue
+
     batch, new_cursor = get_batch(state, max_cursor_size=batch_size)
 
     if not batch:
@@ -673,15 +696,20 @@ def run_scrape(batch_size: int, force: bool = False):
                 state["successes"] += 1
                 acct_status = f"🚦 @{account}: rate-limited"
                 if consecutive_rate_limits >= 2:
+                    cooldown_until = datetime.now(timezone.utc) + timedelta(hours=RATE_LIMIT_COOLDOWN_HOURS)
+                    state["suspended_until"] = cooldown_until.isoformat()
                     print(f"\n  🛑 {consecutive_rate_limits} consecutive rate limits — aborting batch early.")
-                    print(f"     Instagram is throttling this session. Next run will continue from @{account}.")
+                    print(f"     Instagram is throttling this session.")
+                    print(f"     Cooldown: skipping scheduled runs for {RATE_LIMIT_COOLDOWN_HOURS}h (until {cooldown_until.isoformat()}).")
+                    print(f"     Next active run will continue from @{account}.")
                     _ntfy(
                         "IG Scraper: rate-limited",
-                        f"{consecutive_rate_limits} consecutive fake-404s while authenticated. Batch aborted early — will retry next run.",
+                        f"{consecutive_rate_limits} consecutive fake-404s while authenticated. "
+                        f"Cooling off for {RATE_LIMIT_COOLDOWN_HOURS}h, then resuming from @{account}.",
                         priority="default",
                         tags="warning",
                     )
-                    # Don't advance cursor past this account so it retries next run
+                    # Don't advance cursor past this account so it retries after cooldown
                     new_cursor = (all_accounts.index(account)) % len(all_accounts)
                     break
                 if i < len(batch):
@@ -912,8 +940,9 @@ def main():
         state = load_state()
         state["suspended"] = False
         state["auth_failure_streak"] = 0
+        state["suspended_until"] = None
         save_state(state)
-        print("🔓 Scraper unsuspended — auth_failure_streak reset to 0.")
+        print("🔓 Scraper unsuspended — auth_failure_streak and rate-limit cooldown cleared.")
         return
 
     if args.daily_report:
