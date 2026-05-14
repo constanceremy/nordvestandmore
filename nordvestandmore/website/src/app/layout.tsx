@@ -3,6 +3,10 @@ import "./globals.css";
 import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 import { Analytics } from "@vercel/analytics/next";
+import GoogleAnalytics from "@/components/GoogleAnalytics";
+import ConsentBanner from "@/components/ConsentBanner";
+
+const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
 
 export const metadata: Metadata = {
   title: "NV & more — Nordvest, Copenhagen",
@@ -26,9 +30,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen flex flex-col">
+        {GA_ID && <GoogleAnalytics gaId={GA_ID} />}
         <Nav />
         <main className="flex-1">{children}</main>
         <Footer />
+        <ConsentBanner />
         <Analytics />
       </body>
     </html>
