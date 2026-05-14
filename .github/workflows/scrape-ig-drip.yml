@@ -92,6 +92,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           IG_USERNAME: ${{ secrets.IG_USERNAME }}
           IG_PASSWORD: ${{ secrets.IG_PASSWORD }}
+          IG_PROXY_URL: ${{ secrets.IG_PROXY_URL }}
           GOOGLE_SHEET_CSV_URL: ${{ secrets.GOOGLE_SHEET_CSV_URL }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         working-directory: nordvestandmore/scraper/ig_scraper

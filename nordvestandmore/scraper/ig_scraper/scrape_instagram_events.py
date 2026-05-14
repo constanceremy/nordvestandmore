@@ -151,6 +151,15 @@ def setup_instaloader(login_first: bool = False) -> instaloader.Instaloader:
         request_timeout=30,
     )
 
+    # Optional: route through a proxy when running on GitHub-hosted runners,
+    # whose data-center IPs are flagged by Instagram. Falls back to direct
+    # connection if IG_PROXY_URL is unset.
+    proxy_url = os.environ.get("IG_PROXY_URL", "").strip()
+    if proxy_url:
+        L.context._session.proxies = {"http": proxy_url, "https": proxy_url}
+        masked = proxy_url.split("@")[-1] if "@" in proxy_url else proxy_url
+        log(f"Routing through proxy: {masked}")
+
     if login_first and IG_USERNAME and IG_PASSWORD:
         try_login(L)
     else:
