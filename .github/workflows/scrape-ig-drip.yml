@@ -2,9 +2,11 @@ name: Instagram Drip Scraper
 
 on:
   schedule:
-    # Every 6 hours (00/06/12/18 UTC). Reduced from */30 to back off after IG
-    # started throttling the session in May 2026. Daily-report job runs at 06 UTC.
-    - cron: "0 */6 * * *"
+    # Every 30 minutes — with 5 accounts per run, covers all ~144
+    # accounts in ~14 hours.  A cursor tracks position
+    # so each run picks up where the last one left off.
+    # Runs on self-hosted Mac runner → residential IP → no IG rate limits.
+    - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
       batch_size:
@@ -25,39 +27,36 @@ on:
         default: false
 
 concurrency:
+  # Only one drip run at a time. If a new run is queued while one is in progress,
+  # cancel the in-progress one so we don't pile up stale batches after a Mac sleep.
   group: ig-drip
   cancel-in-progress: true
 
 jobs:
   drip:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 25
 
     env:
+      # State file persists on the Mac between runs (no need for Actions cache)
       IG_STATE_FILE: /tmp/ig_cursor/state.json
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Restore state + session cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            /tmp/ig_cursor
-            ~/.config/instaloader
-          key: ig-drip-state-${{ github.run_id }}
-          restore-keys: ig-drip-state-
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       - name: Install Python dependencies
         run: |
           cd nordvestandmore/scraper
-          pip install -r requirements.txt
+          # Use the persistent nv_scraper venv if available (already has all deps)
+          if [ -f nv_scraper/.venv/bin/activate ]; then
+            echo "✅ Using existing nv_scraper/.venv"
+          else
+            echo "🔧 Creating venv at nv_scraper/.venv"
+            python3 -m venv nv_scraper/.venv
+            source nv_scraper/.venv/bin/activate
+            pip install -r requirements.txt
+          fi
 
       # ── Ensure IG session is available ──
       - name: Restore IG session
@@ -65,17 +64,19 @@ jobs:
           IG_USERNAME: ${{ secrets.IG_USERNAME }}
           IG_SESSION_B64: ${{ secrets.IG_SESSION_B64 }}
         run: |
-          SESSION_DIR="$HOME/.config/instaloader"
+          # GitHub Actions may override HOME, so ensure session is in the right place
+          REAL_HOME=$(eval echo ~)
+          SESSION_DIR="$REAL_HOME/.config/instaloader"
           SESSION_FILE="$SESSION_DIR/session-${IG_USERNAME}"
           FORCE="${{ inputs.force_refresh_session }}"
           if [ "$FORCE" = "true" ] && [ -n "$IG_SESSION_B64" ]; then
-            echo "📸 Force-refreshing session from secret"
+            echo "📸 Force-refreshing session from secret (overwriting local file)"
             mkdir -p "$SESSION_DIR"
             echo "$IG_SESSION_B64" | base64 -d > "$SESSION_FILE"
           elif [ -f "$SESSION_FILE" ]; then
-            echo "📸 Using cached session file"
+            echo "📸 Using existing session file at $SESSION_FILE (preserving token rotations)"
           elif [ -n "$IG_SESSION_B64" ]; then
-            echo "📸 No cached session — restoring from secret"
+            echo "📸 No local session file — restoring from secret"
             mkdir -p "$SESSION_DIR"
             echo "$IG_SESSION_B64" | base64 -d > "$SESSION_FILE"
           else
@@ -92,32 +93,35 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           IG_USERNAME: ${{ secrets.IG_USERNAME }}
           IG_PASSWORD: ${{ secrets.IG_PASSWORD }}
-          IG_PROXY_URL: ${{ secrets.IG_PROXY_URL }}
           GOOGLE_SHEET_CSV_URL: ${{ secrets.GOOGLE_SHEET_CSV_URL }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         working-directory: nordvestandmore/scraper/ig_scraper
         run: |
+          # Activate venv if it exists
+          if [ -f ../../venv/bin/activate ]; then
+            source ../../venv/bin/activate
+          fi
+
+          # Activate the persistent venv
+          source ../nv_scraper/.venv/bin/activate
+
+          # caffeinate -dims prevents the Mac from sleeping during the scrape
           if [ -n "${{ inputs.accounts }}" ]; then
             echo "📸 Manual mode: scraping specific accounts"
-            DAYS_BACK="${{ inputs.days_back || '20' }}" python3 scrape_instagram_events.py ${{ inputs.accounts }}
+            # Use provided days_back (default 20) for manual runs so older posts aren't missed
+            DAYS_BACK="${{ inputs.days_back || '20' }}" caffeinate -dims python3 scrape_instagram_events.py ${{ inputs.accounts }}
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual drip run — bypass random skip/delay
             BATCH_SIZE="${{ inputs.batch_size || '3' }}"
+            # If session was force-refreshed, clear suspension flags before scraping
             if [ "${{ inputs.force_refresh_session }}" = "true" ]; then
               python3 -c "import json,pathlib; f=pathlib.Path('$IG_STATE_FILE'); d=json.loads(f.read_text()) if f.exists() else {}; d.update({'suspended':False,'auth_failure_streak':0,'suspended_until':None}); f.parent.mkdir(parents=True,exist_ok=True); f.write_text(json.dumps(d,indent=2)); print('🔓 Scraper unsuspended')"
             fi
-            python3 drip_scrape.py --batch-size "$BATCH_SIZE" --force
+            caffeinate -dims python3 drip_scrape.py --batch-size "$BATCH_SIZE" --force
           else
-            python3 drip_scrape.py --batch-size 3
+            # Scheduled run — use random skip + delay for organic timing
+            caffeinate -dims python3 drip_scrape.py --batch-size 3
           fi
-
-      - name: Save state + session cache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            /tmp/ig_cursor
-            ~/.config/instaloader
-          key: ig-drip-state-${{ github.run_id }}
 
       # ── Failure notification ──
       - name: Notify on failure
@@ -136,9 +140,9 @@ jobs:
 
   # ── Daily digest + tracker: runs once per day at 06:00 UTC ──
   daily-report:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 5
-    if: github.event.schedule == '0 */6 * * *'
+    if: github.event.schedule == '*/30 * * * *'
     needs: drip
 
     env:
@@ -149,36 +153,18 @@ jobs:
         id: check
         run: |
           HOUR=$(date -u +%H)
-          if [ "$HOUR" = "06" ]; then
+          MINUTE=$(date -u +%M)
+          # Run the daily report once per day at the 06:00 UTC slot
+          if [ "$HOUR" = "06" ] && [ "$MINUTE" = "00" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "⏭️ Not report time (${HOUR} UTC), skipping"
+            echo "⏭️ Not report time (${HOUR}:${MINUTE} UTC), skipping"
           fi
 
       - name: Checkout code
         if: steps.check.outputs.run == 'true'
         uses: actions/checkout@v4
-
-      - name: Restore state cache
-        if: steps.check.outputs.run == 'true'
-        uses: actions/cache/restore@v4
-        with:
-          path: /tmp/ig_cursor
-          key: ig-drip-state-${{ github.run_id }}
-          restore-keys: ig-drip-state-
-
-      - name: Set up Python
-        if: steps.check.outputs.run == 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Python dependencies
-        if: steps.check.outputs.run == 'true'
-        run: |
-          cd nordvestandmore/scraper
-          pip install -r requirements.txt
 
       - name: Generate daily report + tracker
         if: steps.check.outputs.run == 'true'
@@ -186,6 +172,7 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         working-directory: nordvestandmore/scraper/ig_scraper
         run: |
+          source ../nv_scraper/.venv/bin/activate
           python3 drip_scrape.py --daily-report
           python3 drip_scrape.py --export-tracker ../scrape_tracker.md
 
