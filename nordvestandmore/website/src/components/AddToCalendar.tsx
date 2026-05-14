@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { CalendarPlus } from "lucide-react";
+import { trackEvent } from "@/lib/analytics";
 
 type Props = {
   title: string;
@@ -72,6 +73,7 @@ export default function AddToCalendar({ title, date, startTime, endTime, locatio
   if (description) googleUrl.searchParams.set("details", description);
 
   function downloadIcs() {
+    trackEvent("add_to_calendar", { method: "ical", event_title: title, event_date: date });
     const allDay = !start;
     const dtStart = allDay ? `DTSTART;VALUE=DATE:${startFmt}` : `DTSTART;TZID=Europe/Copenhagen:${startFmt}`;
     const dtEnd = allDay ? `DTEND;VALUE=DATE:${endFmt}` : `DTEND;TZID=Europe/Copenhagen:${endFmt}`;
@@ -119,7 +121,11 @@ export default function AddToCalendar({ title, date, startTime, endTime, locatio
             href={googleUrl.toString()}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              trackEvent("add_to_calendar", { method: "google", event_title: title, event_date: date });
+              setOpen(false);
+            }}
             className="block px-4 py-3 text-xs tracking-[0.15em] uppercase hover:bg-black hover:text-white transition-colors border-b border-black"
           >
             Google Calendar

@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback, useState, useRef, useEffect } from "react";
 import { SlidersHorizontal, X, ChevronDown } from "lucide-react";
+import { trackEvent } from "@/lib/analytics";
 
 const OCCASION_TAGS = new Set([
   "Christmas", "Julefrokost", "Nytår", "Fastelavn", "Easter", "Mortensaften",
@@ -119,6 +120,10 @@ export default function EventFilters({ tags, locations }: Props) {
       for (const [key, value] of Object.entries(updates)) {
         if (value) params.set(key, value);
         else params.delete(key);
+        trackEvent("event_filter_change", {
+          filter_type: key,
+          filter_value: value || "(cleared)",
+        });
       }
       router.push(`${pathname}?${params.toString()}`);
     },
