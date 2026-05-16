@@ -4,6 +4,7 @@ import {
   getBlogPosts,
   getSessions,
   getLocations,
+  getGuides,
 } from "@/lib/notion";
 
 const SITE_URL = "https://nordvestandmore.com";
@@ -19,16 +20,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/our-events`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${SITE_URL}/blog`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: `${SITE_URL}/guide`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${SITE_URL}/guides`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${SITE_URL}/about`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
     { url: `${SITE_URL}/terms`, lastModified: now, changeFrequency: "yearly", priority: 0.2 },
     { url: `${SITE_URL}/privacy`, lastModified: now, changeFrequency: "yearly", priority: 0.2 },
   ];
 
-  const [events, blogPosts, sessions, locations] = await Promise.all([
+  const [events, blogPosts, sessions, locations, guides] = await Promise.all([
     getEvents(false).catch(() => []),
     getBlogPosts().catch(() => []),
     getSessions(false).catch(() => []),
     getLocations().catch(() => []),
+    getGuides().catch(() => []),
   ]);
 
   const eventRoutes: MetadataRoute.Sitemap = events
@@ -67,11 +70,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.5,
     }));
 
+  const guidesRoutes: MetadataRoute.Sitemap = guides
+    .filter((g) => g.slug)
+    .map((g) => ({
+      url: `${SITE_URL}/guides/${g.slug}`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.8,
+    }));
+
   return [
     ...staticRoutes,
     ...eventRoutes,
     ...blogRoutes,
     ...sessionRoutes,
     ...guideRoutes,
+    ...guidesRoutes,
   ];
 }

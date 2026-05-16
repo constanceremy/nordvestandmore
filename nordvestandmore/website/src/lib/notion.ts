@@ -603,3 +603,64 @@ export async function getBlogPostsByLocation(locationId: string): Promise<BlogPo
       };
     });
 }
+
+// ─── Guides ────────────────────────────────────────────────────────────────────
+
+export type Guide = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  intro: string;
+  heroImage?: string;
+  order: number;
+  locations: LocationItem[];
+  posts: BlogPost[];
+};
+
+export async function getGuides(): Promise<Guide[]> {
+  const dbId = process.env.NOTION_GUIDES_DB_ID;
+  if (!dbId) return [];
+  const notion = getNotion();
+
+  const [response, allLocations, allPosts] = await Promise.all([
+    notion.databases.query({
+      database_id: dbId,
+      page_size: 100,
+      filter: { property: "Published", checkbox: { equals: true } },
+      sorts: [{ property: "Order", direction: "ascending" }],
+    }),
+    getLocations(),
+    getBlogPosts(),
+  ]);
+
+  const locMap = new Map(allLocations.map((l) => [l.id, l]));
+  const postMap = new Map(allPosts.map((p) => [p.id, p]));
+
+  return response.results
+    .filter((page): page is PageObjectResponse => page.object === "page")
+    .map((page) => {
+      const p = page.properties;
+      const title = getText(p["Name"]);
+      const slug = getText(p["Slug"]) || slugify(title);
+      const locationIds = getRelationIds(p["Locations"]);
+      const postIds = getRelationIds(p["Posts"]);
+      return {
+        id: page.id,
+        slug,
+        title,
+        description: getText(p["Description"]),
+        intro: getText(p["Intro"]),
+        heroImage: getFiles(p["Hero image"]),
+        order: getNumber(p["Order"]),
+        locations: locationIds.map((id) => locMap.get(id)).filter((l): l is LocationItem => !!l),
+        posts: postIds.map((id) => postMap.get(id)).filter((p): p is BlogPost => !!p),
+      };
+    })
+    .filter((g) => g.title && g.slug);
+}
+
+export async function getGuideBySlug(slug: string): Promise<Guide | null> {
+  const all = await getGuides();
+  return all.find((g) => g.slug === slug) ?? null;
+}
