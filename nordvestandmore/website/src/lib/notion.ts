@@ -644,14 +644,14 @@ export async function getGuides(): Promise<Guide[]> {
       const title = getText(p["Name"]);
       const slug = getText(p["Slug"]) || slugify(title);
       const locationIds = getRelationIds(p["Locations"]);
-      const postIds = getRelationIds(p["Posts"]);
+      const postIds = getRelationIds(p["Blog Articles"]);
       return {
         id: page.id,
         slug,
         title,
         description: getText(p["Description"]),
         intro: getText(p["Intro"]),
-        heroImage: getFiles(p["Hero image"]),
+        heroImage: getFiles(p["Hero Image"]),
         order: getNumber(p["Order"]),
         locations: locationIds.map((id) => locMap.get(id)).filter((l): l is LocationItem => !!l),
         posts: postIds.map((id) => postMap.get(id)).filter((p): p is BlogPost => !!p),
