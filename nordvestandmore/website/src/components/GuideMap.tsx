@@ -58,7 +58,7 @@ export default function GuideMap({ locations, activeSlug }: Props) {
         if (!isActive) {
           marker.bindTooltip(loc.name, { permanent: false, direction: "top", offset: [0, -6] });
           marker.on("click", () => {
-            window.location.href = `/guide/${loc.slug}`;
+            window.location.href = `/map/${loc.slug}`;
           });
         }
       });

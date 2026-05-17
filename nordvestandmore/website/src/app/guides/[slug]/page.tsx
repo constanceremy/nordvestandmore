@@ -112,7 +112,7 @@ export default async function GuidePage({
               <li key={loc.id} className="py-6 flex flex-col md:flex-row md:items-baseline md:justify-between gap-2">
                 <div>
                   <Link
-                    href={`/guide/${loc.slug}`}
+                    href={`/map/${loc.slug}`}
                     className="text-xl hover:underline underline-offset-4"
                     style={{ fontFamily: "Neue Haas Grotesk Display Pro, Helvetica, sans-serif" }}
                   >
@@ -125,7 +125,7 @@ export default async function GuidePage({
                   )}
                 </div>
                 <Link
-                  href={`/guide/${loc.slug}`}
+                  href={`/map/${loc.slug}`}
                   className="text-xs tracking-[0.2em] uppercase inline-flex items-center gap-1 hover:opacity-50 transition-opacity shrink-0"
                 >
                   <MapPin size={12} /> View

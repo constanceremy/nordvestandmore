@@ -24,7 +24,7 @@ export async function generateMetadata({
   const location = locations.find((l) => l.slug === slug);
   if (!location) return {};
   return {
-    title: `${location.name} | NV & more Guide`,
+    title: `${location.name} | NV & more`,
     description: `${location.name} — ${location.tags.join(", ")} in Nordvest, Copenhagen`,
   };
 }
@@ -49,11 +49,11 @@ export default async function LocationPage({
     <div className="max-w-6xl mx-auto px-6 py-16">
       {/* Back */}
       <Link
-        href="/guide"
+        href="/map"
         className="inline-flex items-center gap-2 text-xs tracking-[0.2em] uppercase hover:opacity-50 transition-opacity mb-12"
       >
         <ArrowLeft size={12} />
-        The Guide
+        The Map
       </Link>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
@@ -75,7 +75,7 @@ export default async function LocationPage({
               {location.tags.map((tag) => (
                 <Link
                   key={tag}
-                  href={`/guide?tag=${tag}`}
+                  href={`/map?tag=${tag}`}
                   className="text-xs tracking-[0.15em] uppercase border border-black px-3 py-1 hover:bg-black hover:text-white transition-colors"
                 >
                   {tag}

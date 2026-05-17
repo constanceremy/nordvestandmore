@@ -14,6 +14,16 @@ const nextConfig: NextConfig = {
         destination: "/our-events/:id",
         permanent: true,
       },
+      {
+        source: "/guide",
+        destination: "/map",
+        permanent: true,
+      },
+      {
+        source: "/guide/:slug",
+        destination: "/map/:slug",
+        permanent: true,
+      },
     ];
   },
 };

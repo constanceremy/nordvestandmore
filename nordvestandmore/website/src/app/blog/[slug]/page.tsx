@@ -102,7 +102,7 @@ export default async function BlogPostPage({
             {postLocations.map((loc) => (
               <Link
                 key={loc.id}
-                href={`/guide/${loc.slug}`}
+                href={`/map/${loc.slug}`}
                 className="inline-flex items-center gap-1.5 border border-black px-3 py-1.5 text-xs font-semibold tracking-widest uppercase hover:bg-black hover:text-white transition-colors"
               >
                 <MapPin size={10} />
