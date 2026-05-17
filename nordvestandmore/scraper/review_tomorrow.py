@@ -291,11 +291,13 @@ def merge_cluster(cluster, dry_run=False):
     # Merge title via Gemini
     merged_title = gemini_merge_titles([e["title"] for e in sorted_cluster])
 
-    # Tag List = union across cluster (preserve order, drop duplicates)
+    # Tag List = union across cluster, falling back to legacy Tags per event
+    # (matches the website's read pattern: prefer Tag List, fall back to Tags)
     merged_tags = []
     for e in sorted_cluster:
-        for t in e["tag_list"]:
-            if t not in merged_tags:
+        source_tags = e["tag_list"] if e["tag_list"] else e["tags_legacy"]
+        for t in source_tags:
+            if t and t not in merged_tags:
                 merged_tags.append(t)
 
     # Pick best link by source priority
@@ -377,7 +379,15 @@ def print_event_line(ev, indent="  "):
     src = ev["source_type"] or "?"
     link = link_for(ev)
     link_short = link.split("://")[-1][:60] if link else "(no link)"
-    print(f"{indent}{format_time(ev['start_time']):>8}  {ev['title']}  [{src}]")
+    # Truncate very long titles (IG captions can be 1000+ chars)
+    title = ev["title"][:120] + ("…" if len(ev["title"]) > 120 else "")
+    print(f"{indent}{format_time(ev['start_time']):>8}  {title}  [{src}]")
+    # Surface what tags this event currently has so the user can see
+    # before merging — preferred Tag List, otherwise legacy Tags.
+    shown_tags = ev["tag_list"] if ev["tag_list"] else ev["tags_legacy"]
+    if shown_tags:
+        which = "Tag List" if ev["tag_list"] else "Tags (legacy)"
+        print(f"{indent}          🏷  {which}: {shown_tags}")
     print(f"{indent}          {ev['url']}")
     if link:
         print(f"{indent}          ↗ {link_short}")
