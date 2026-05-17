@@ -255,9 +255,14 @@ def _measure_events_height(events: list[dict], font_name: ImageFont,
 
 def _split_into_slides(events: list[dict], fonts: dict) -> list[list[dict]]:
     """
-    Greedily split events into slides.
-    Each slide uses EVENT_FONT_MAX for its events.
-    If a chunk overflows BODY_H we shrink the chunk until it fits.
+    Split events across slides while keeping the count per slide as even
+    as possible.
+
+    Two-pass:
+      1) Greedy pack to find the minimum number of slides that fit.
+      2) Redistribute so each slide has ceil(n/total) or floor(n/total)
+         events (preserving order). If any redistributed slide overflows
+         BODY_H, fall back to the greedy result for that slide count.
     """
     if not events:
         return [[]]
@@ -268,9 +273,9 @@ def _split_into_slides(events: list[dict], fonts: dict) -> list[list[dict]]:
     fmet = _load_spec(fonts["reg"],   18)
     max_w = W - PADDING * 2
 
-    slides    = []
+    # ── Pass 1: greedy pack to determine minimum slide count ──
+    greedy_slides: list[list[dict]] = []
     remaining = list(events)
-
     while remaining:
         chunk = []
         for ev in remaining:
@@ -282,10 +287,31 @@ def _split_into_slides(events: list[dict], fonts: dict) -> list[list[dict]]:
         if not chunk:
             # Single event overflows (very long name) — force it onto its own slide
             chunk = [remaining[0]]
-        slides.append(chunk)
+        greedy_slides.append(chunk)
         remaining = remaining[len(chunk):]
 
-    return slides
+    n_slides = len(greedy_slides)
+    if n_slides <= 1:
+        return greedy_slides
+
+    # ── Pass 2: redistribute events evenly across n_slides ──
+    n_events = len(events)
+    base = n_events // n_slides
+    extra = n_events % n_slides  # first `extra` slides get one more event
+
+    balanced: list[list[dict]] = []
+    start = 0
+    for i in range(n_slides):
+        size = base + (1 if i < extra else 0)
+        balanced.append(events[start:start + size])
+        start += size
+
+    # Validate the balanced split fits; if any slide overflows, fall back
+    for slide in balanced:
+        if _measure_events_height(slide, fnom, fmet, d, max_w) > BODY_H:
+            return greedy_slides
+
+    return balanced
 
 
 # ── Notion data fetch ─────────────────────────────────────────────────────────
