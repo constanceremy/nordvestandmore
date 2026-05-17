@@ -35,6 +35,7 @@ export default async function AdminReviewPage({
 
   return (
     <ReviewClient
+      key={date}
       token={token}
       date={date}
       singletons={singletons}
